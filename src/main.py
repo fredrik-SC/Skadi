@@ -129,6 +129,11 @@ def main() -> None:
         help="Run a single sweep and exit (default: continuous)",
     )
     parser.add_argument(
+        "--preset", type=str, default=None,
+        choices=["hf", "vhf", "uhf", "airband", "military_hf"],
+        help="Use a scan preset (overrides freq range, FFT size, dwell time)",
+    )
+    parser.add_argument(
         "--start", type=float, default=None,
         help="Override start frequency in Hz (default: from config)",
     )
@@ -163,6 +168,15 @@ def main() -> None:
     scan_config = config["scan"].copy()
     detection_config = config["detection"]
     web_config = config.get("web", {})
+
+    # Apply scan preset if specified
+    if args.preset:
+        presets = config.get("scan_presets", {})
+        if args.preset in presets:
+            scan_config.update(presets[args.preset])
+            logger.info("Applied scan preset: %s", args.preset)
+        else:
+            logger.warning("Unknown preset '%s', using default scan config", args.preset)
 
     if args.start:
         scan_config["freq_start"] = args.start

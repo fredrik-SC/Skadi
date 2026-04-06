@@ -16,25 +16,63 @@ sdr:
   agc: true
 
 scan:
-  # Frequency range in Hz
+  # Default frequency range in Hz
   freq_start: 30000000     # 30 MHz
-  freq_stop: 3000000000    # 3 GHz
+  freq_stop: 174000000     # 174 MHz (VHF)
   # Step size in Hz (how much to advance centre frequency each step)
   step_size: 2000000       # 2 MHz (matches sample_rate for contiguous coverage)
   # Dwell time per step in seconds
   dwell_time: 0.5
-  # FFT size (number of points)
-  fft_size: 4096
+  # FFT size (number of points) — 8192 gives 250 Hz/bin at 2 MHz
+  fft_size: 8192
   # Number of FFT averages per step
   fft_averages: 10
+
+# Band-specific scan presets (override scan section)
+scan_presets:
+  hf:
+    freq_start: 3000000      # 3 MHz
+    freq_stop: 30000000      # 30 MHz
+    step_size: 500000        # 500 kHz (narrower steps for HF)
+    fft_size: 16384          # 125 Hz/bin — resolves 250+ Hz signals
+    fft_averages: 20         # More averaging for weak HF signals
+    dwell_time: 1.0          # Longer dwell for weak signals
+  vhf:
+    freq_start: 30000000     # 30 MHz
+    freq_stop: 174000000     # 174 MHz
+    step_size: 2000000
+    fft_size: 8192           # 250 Hz/bin
+    fft_averages: 10
+    dwell_time: 0.5
+  uhf:
+    freq_start: 225000000    # 225 MHz
+    freq_stop: 512000000     # 512 MHz
+    step_size: 2000000
+    fft_size: 8192
+    fft_averages: 10
+    dwell_time: 0.5
+  airband:
+    freq_start: 108000000    # 108 MHz
+    freq_stop: 137000000     # 137 MHz
+    step_size: 2000000
+    fft_size: 8192
+    fft_averages: 10
+    dwell_time: 0.5
+  military_hf:
+    freq_start: 2000000      # 2 MHz
+    freq_stop: 30000000      # 30 MHz
+    step_size: 500000
+    fft_size: 16384          # 125 Hz/bin
+    fft_averages: 30         # Heavy averaging for weak military signals
+    dwell_time: 2.0          # Long dwell
 
 detection:
   # Signal detection threshold above noise floor in dB
   threshold_db: 10.0
   # Minimum signal bandwidth in Hz to count as a detection
-  min_bandwidth_hz: 500
+  min_bandwidth_hz: 100      # Low enough for 200 Hz military signals
   # Maximum number of concurrent signals to track per scan step
-  max_signals_per_step: 10
+  max_signals_per_step: 20
   # Adaptive noise floor: rolling window size (number of scan steps)
   noise_window_size: 10
   # Adaptive noise floor: EMA alpha (0-1, higher = more responsive)
@@ -45,7 +83,7 @@ fingerprint:
   min_snr_db: 8.0
   # Guard bandwidth factor for signal isolation filter
   guard_factor: 3.0
-  # FIR filter order for signal isolation
+  # FIR filter order for signal isolation (overridden adaptively for narrowband)
   filter_numtaps: 101
   # ACF search range in milliseconds
   acf_min_lag_ms: 1.0

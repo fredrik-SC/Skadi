@@ -164,6 +164,21 @@ class SDRInterface:
         if self._device is None:
             raise SDRConnectionError("Device not connected")
 
+        # Validate frequency is within hardware range
+        try:
+            freq_ranges = self._device.getFrequencyRange(_RX, 0)
+            in_range = any(
+                r.minimum() <= frequency_hz <= r.maximum()
+                for r in freq_ranges
+            )
+            if not in_range:
+                logger.warning(
+                    "Frequency %.3f MHz may be outside hardware range",
+                    frequency_hz / 1e6,
+                )
+        except Exception:
+            pass  # Don't fail on range check errors
+
         self._device.setFrequency(_RX, 0, frequency_hz)
         actual_freq = self._device.getFrequency(_RX, 0)
         logger.info(
