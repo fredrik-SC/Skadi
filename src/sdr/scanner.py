@@ -15,6 +15,7 @@ from typing import Any
 import numpy as np
 
 from src.classification.classifier import ClassificationResult, SignalClassifier
+from src.classification.threat import ThreatMapper
 from src.detection.detector import SignalDetector
 from src.detection.exclusions import ExclusionFilter
 from src.detection.models import DetectedSignal, ScanResult, ScanStep
@@ -47,6 +48,7 @@ class SpectrumScanner:
         detection_log: Optional DetectionLog for persisting detections to SQLite.
         fingerprint_extractor: Optional FingerprintExtractor for signal fingerprinting.
         signal_classifier: Optional SignalClassifier for Artemis DB matching.
+        threat_mapper: Optional ThreatMapper for threat level assignment.
 
     Example:
         with SDRInterface(config["sdr"]) as sdr:
@@ -68,6 +70,7 @@ class SpectrumScanner:
         detection_log: DetectionLog | None = None,
         fingerprint_extractor: FingerprintExtractor | None = None,
         signal_classifier: SignalClassifier | None = None,
+        threat_mapper: ThreatMapper | None = None,
     ) -> None:
         self._sdr = sdr
 
@@ -92,6 +95,7 @@ class SpectrumScanner:
         self._detection_log = detection_log
         self._fingerprint_extractor = fingerprint_extractor
         self._classifier = signal_classifier
+        self._threat_mapper = threat_mapper
 
         # Pre-compute the Hann window
         self._window = np.hanning(self._fft_size).astype(np.float32)
@@ -310,6 +314,17 @@ class SpectrumScanner:
                 cr = classification_results.get(id(fp)) if fp else None
                 matches = cr.matches if cr else []
 
+                # Assign threat level
+                threat_level = None
+                if self._threat_mapper is not None:
+                    if matches:
+                        threat_level = self._threat_mapper.assess(
+                            matches[0].signal.name,
+                            matches[0].signal.description,
+                        )
+                    else:
+                        threat_level = self._threat_mapper.default_level
+
                 self._detection_log.log_signal(
                     signal,
                     modulation=fp.modulation.value if fp else None,
@@ -320,6 +335,7 @@ class SpectrumScanner:
                     alt_match_2=matches[2].signal.name if len(matches) > 2 else None,
                     alt_match_2_confidence=matches[2].confidence if len(matches) > 2 else None,
                     known_users=matches[0].signal.description[:200] if matches and matches[0].signal.description else None,
+                    threat_level=threat_level,
                     acf_value=fp.acf_ms if fp else None,
                 )
 

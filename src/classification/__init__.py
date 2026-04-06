@@ -11,6 +11,7 @@ from src.classification.classifier import (
     SignalClassifier,
 )
 from src.classification.confidence import compute_confidence
+from src.classification.threat import ThreatMapper
 
 __all__ = [
     "ArtemisDB",
@@ -18,5 +19,6 @@ __all__ = [
     "ClassificationMatch",
     "ClassificationResult",
     "SignalClassifier",
+    "ThreatMapper",
     "compute_confidence",
 ]
