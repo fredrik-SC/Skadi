@@ -15,8 +15,10 @@ from typing import Any
 import numpy as np
 
 from src.detection.detector import SignalDetector
+from src.detection.exclusions import ExclusionFilter
 from src.detection.models import DetectedSignal, ScanResult, ScanStep
 from src.detection.noise import NoiseEstimator
+from src.detectionlog.database import DetectionLog
 from src.sdr.interface import SDRInterface
 
 logger = logging.getLogger(__name__)
@@ -36,8 +38,10 @@ class SpectrumScanner:
         scan_config: The 'scan' section from default.yaml.
         sdr_config: The 'sdr' section from default.yaml (for sample_rate).
         detection_config: The 'detection' section from default.yaml.
-        noise_estimator: Optional NoiseEstimator (default: median-based).
+        noise_estimator: Optional NoiseEstimator (default: adaptive).
         signal_detector: Optional SignalDetector (default: from detection_config).
+        exclusion_filter: Optional ExclusionFilter for suppressing known signals.
+        detection_log: Optional DetectionLog for persisting detections to SQLite.
 
     Example:
         with SDRInterface(config["sdr"]) as sdr:
@@ -55,6 +59,8 @@ class SpectrumScanner:
         detection_config: dict[str, Any],
         noise_estimator: NoiseEstimator | None = None,
         signal_detector: SignalDetector | None = None,
+        exclusion_filter: ExclusionFilter | None = None,
+        detection_log: DetectionLog | None = None,
     ) -> None:
         self._sdr = sdr
 
@@ -70,8 +76,13 @@ class SpectrumScanner:
         self._sample_rate = float(sdr_config.get("sample_rate", 2_048_000))
 
         # Detection components (dependency injection with sensible defaults)
-        self._noise_estimator = noise_estimator or NoiseEstimator()
+        self._noise_estimator = noise_estimator or NoiseEstimator(
+            window_size=int(detection_config.get("noise_window_size", 10)),
+            alpha=float(detection_config.get("noise_alpha", 0.3)),
+        )
         self._signal_detector = signal_detector or SignalDetector(detection_config)
+        self._exclusion_filter = exclusion_filter
+        self._detection_log = detection_log
 
         # Pre-compute the Hann window
         self._window = np.hanning(self._fft_size).astype(np.float32)
@@ -211,6 +222,9 @@ class SpectrumScanner:
         all_signals: list[DetectedSignal] = []
         scan_steps: list[ScanStep] = []
 
+        # Reset adaptive noise estimator for fresh sweep
+        self._noise_estimator.reset()
+
         logger.info(
             "Starting sweep: %.3f - %.3f MHz (%d steps, %.1f MHz step size)",
             self._freq_start / 1e6, self._freq_stop / 1e6,
@@ -224,6 +238,11 @@ class SpectrumScanner:
 
             # Detect signals in this step
             signals = self._signal_detector.detect(step)
+
+            # Apply exclusion filter if configured
+            if self._exclusion_filter is not None:
+                signals = self._exclusion_filter.filter(signals)
+
             all_signals.extend(signals)
 
             if keep_psd:
@@ -242,6 +261,10 @@ class SpectrumScanner:
 
         # Sort all signals by peak power
         all_signals.sort(key=lambda s: s.peak_power_dbm, reverse=True)
+
+        # Log detections to database if configured
+        if self._detection_log is not None and all_signals:
+            self._detection_log.log_signals(all_signals)
 
         logger.info(
             "Sweep complete: %d signal(s) detected in %.1f seconds",

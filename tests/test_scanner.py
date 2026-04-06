@@ -159,3 +159,57 @@ class TestSpectrumScanner:
         assert freq_offsets[0] < 0
         assert freq_offsets[-1] > 0
         assert freq_offsets[0] == pytest.approx(-2_048_000 / 2, abs=500)
+
+    def test_sweep_resets_noise_estimator(self, scan_config, sdr_config, detection_config):
+        """Sweep resets the noise estimator at the start."""
+        iq = generate_test_iq(num_samples=1_024_000)
+        mock_sdr = make_mock_sdr(iq)
+        noise_est = MagicMock()
+        noise_est.estimate.return_value = -100.0
+
+        scanner = SpectrumScanner(
+            mock_sdr, scan_config, sdr_config, detection_config,
+            noise_estimator=noise_est,
+        )
+        scanner.sweep()
+        noise_est.reset.assert_called_once()
+
+    def test_sweep_with_exclusion_filter(self, scan_config, sdr_config, detection_config):
+        """Exclusion filter is applied and removes matching signals."""
+        iq = generate_test_iq(num_samples=1_024_000)
+        mock_sdr = make_mock_sdr(iq)
+        mock_filter = MagicMock()
+        # Filter removes all signals
+        mock_filter.filter.return_value = []
+
+        scanner = SpectrumScanner(
+            mock_sdr, scan_config, sdr_config, detection_config,
+            exclusion_filter=mock_filter,
+        )
+        result = scanner.sweep()
+
+        # Filter should have been called for each step
+        assert mock_filter.filter.call_count == 10
+        assert result.signals == []
+
+    def test_sweep_with_detection_log(self, scan_config, sdr_config, detection_config):
+        """Detection log receives all signals after the sweep."""
+        iq = generate_test_iq(
+            tones=[(500_000, 0.5)],  # Add a tone so signals are detected
+            num_samples=1_024_000,
+            noise_power=1e-12,
+        )
+        mock_sdr = make_mock_sdr(iq)
+        mock_log = MagicMock()
+        mock_log.log_signals.return_value = [1, 2, 3]
+
+        scanner = SpectrumScanner(
+            mock_sdr, scan_config, sdr_config, detection_config,
+            detection_log=mock_log,
+        )
+        result = scanner.sweep()
+
+        if result.signals:
+            mock_log.log_signals.assert_called_once()
+            logged_signals = mock_log.log_signals.call_args[0][0]
+            assert len(logged_signals) == len(result.signals)

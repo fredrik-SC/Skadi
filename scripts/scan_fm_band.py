@@ -21,9 +21,11 @@ import numpy as np
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.config import load_config
+from src.config import load_config, PROJECT_ROOT
 from src.detection.detector import SignalDetector
+from src.detection.exclusions import ExclusionFilter
 from src.detection.noise import NoiseEstimator
+from src.detectionlog.database import DetectionLog
 from src.sdr.interface import SDRInterface
 from src.sdr.scanner import SpectrumScanner
 
@@ -118,11 +120,27 @@ def main() -> None:
     print(f"Step size: {scan_config['step_size'] / 1e6:.1f} MHz, "
           f"Dwell time: {scan_config['dwell_time']}s\n")
 
+    # Load exclusion list
+    exclusions_path = PROJECT_ROOT / "config" / "exclusions.yaml"
+    exclusion_filter = ExclusionFilter(exclusions_path)
+    if exclusion_filter.entries:
+        print(f"Exclusion list: {len(exclusion_filter.entries)} entries loaded")
+
+    # Set up detection log
+    log_path = Path(PROJECT_ROOT / config["logging"]["database_path"])
+    detection_log = DetectionLog(log_path)
+
     with SDRInterface(sdr_config) as sdr:
-        scanner = SpectrumScanner(sdr, scan_config, sdr_config, detection_config)
+        scanner = SpectrumScanner(
+            sdr, scan_config, sdr_config, detection_config,
+            exclusion_filter=exclusion_filter,
+            detection_log=detection_log,
+        )
         print(f"Total steps: {scanner.num_steps}\n")
 
         result = scanner.sweep(callback=progress_callback)
+
+    detection_log.close()
 
     # Print results table
     print("\n" + "=" * 75)

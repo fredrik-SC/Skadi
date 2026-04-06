@@ -35,6 +35,10 @@ detection:
   min_bandwidth_hz: 500
   # Maximum number of concurrent signals to track per scan step
   max_signals_per_step: 10
+  # Adaptive noise floor: rolling window size (number of scan steps)
+  noise_window_size: 10
+  # Adaptive noise floor: EMA alpha (0-1, higher = more responsive)
+  noise_alpha: 0.3
 
 classification:
   # Bandwidth matching tolerance (fraction, e.g. 0.15 = +/- 15%)
