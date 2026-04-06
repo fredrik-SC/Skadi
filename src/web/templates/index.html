@@ -21,6 +21,19 @@
         </div>
     </header>
 
+    <!-- Scan Controls -->
+    <div id="scan-controls">
+        <div class="control-group">
+            <label>Start (MHz):</label>
+            <input type="number" id="scan-start" value="88" step="1" min="1" max="3000">
+            <label>Stop (MHz):</label>
+            <input type="number" id="scan-stop" value="108" step="1" min="1" max="3000">
+            <button id="btn-start-scan" class="btn-scan">Start Scan</button>
+            <button id="btn-stop-scan" class="btn-stop" disabled>Stop Scan</button>
+        </div>
+        <div id="error-banner" class="error-banner" style="display:none"></div>
+    </div>
+
     <!-- Main Content -->
     <main>
         <!-- Real-Time Alert Feed -->
@@ -70,6 +83,6 @@
     </main>
 
     <script src="/static/js/socket.io.min.js"></script>
-    <script src="/static/js/skadi.js?v=3"></script>
+    <script src="/static/js/skadi.js?v=4"></script>
 </body>
 </html>

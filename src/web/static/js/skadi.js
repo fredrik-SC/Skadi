@@ -175,17 +175,63 @@
     function pollStatus() {
         fetch('/api/status')
             .then(function(r) { return r.json(); })
-            .then(function(data) { updateStatus(data); })
+            .then(function(data) {
+                updateStatus(data);
+                // Update scan control buttons
+                var startBtn = document.getElementById('btn-start-scan');
+                var stopBtn = document.getElementById('btn-stop-scan');
+                if (data.scanning) {
+                    startBtn.disabled = true;
+                    stopBtn.disabled = false;
+                } else {
+                    startBtn.disabled = false;
+                    stopBtn.disabled = true;
+                }
+                // Show error if any
+                var errorBanner = document.getElementById('error-banner');
+                if (data.error) {
+                    errorBanner.textContent = data.error;
+                    errorBanner.style.display = 'block';
+                } else {
+                    errorBanner.style.display = 'none';
+                }
+            })
             .catch(function() {});
 
-        // Poll every 3 seconds
         setTimeout(pollStatus, 3000);
+    }
+
+    // --- Scan Controls ---
+
+    function startScan() {
+        var startMhz = document.getElementById('scan-start').value;
+        var stopMhz = document.getElementById('scan-stop').value;
+        fetch('/api/scan/start', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                freq_start: parseFloat(startMhz) * 1e6,
+                freq_stop: parseFloat(stopMhz) * 1e6
+            })
+        }).then(function() {
+            document.getElementById('btn-start-scan').disabled = true;
+            document.getElementById('btn-stop-scan').disabled = false;
+        });
+    }
+
+    function stopScan() {
+        fetch('/api/scan/stop', {method: 'POST'}).then(function() {
+            document.getElementById('btn-start-scan').disabled = false;
+            document.getElementById('btn-stop-scan').disabled = true;
+        });
     }
 
     // --- Event Listeners ---
 
     document.getElementById('btn-filter').addEventListener('click', loadHistory);
     document.getElementById('btn-refresh').addEventListener('click', loadHistory);
+    document.getElementById('btn-start-scan').addEventListener('click', startScan);
+    document.getElementById('btn-stop-scan').addEventListener('click', stopScan);
 
     // Column sorting
     document.querySelectorAll('#history-table th[data-sort]').forEach(function(th) {

@@ -189,8 +189,8 @@ class FingerprintExtractor:
         bin_width = sample_rate / fft_size
         refined = num_bins * bin_width
 
-        # Sanity check: don't return wildly different from detection estimate
-        if refined < fallback_bw * 0.1 or refined > fallback_bw * 10:
-            return fallback_bw
-
-        return refined
+        # Use the maximum of refined and detection-stage bandwidth.
+        # The detector's contiguous-bin estimate is reliable for wideband
+        # signals; the refinement can underestimate if the isolation filter
+        # shaped the spectrum.
+        return max(refined, fallback_bw)

@@ -98,13 +98,31 @@ def _register_routes(app: Flask) -> None:
     @app.route("/api/status")
     def api_status():
         """Scanner status endpoint."""
-        # Status is updated by the scan thread via app.config
         return jsonify({
             "scanning": app.config.get("SCANNER_ACTIVE", False),
             "last_sweep_time": app.config.get("LAST_SWEEP_TIME"),
             "total_detections": app.config.get("TOTAL_DETECTIONS", 0),
             "sweep_count": app.config.get("SWEEP_COUNT", 0),
+            "scan_requested": app.config.get("SCAN_REQUESTED", False),
+            "error": app.config.get("LAST_ERROR"),
         })
+
+    @app.route("/api/scan/start", methods=["POST"])
+    def api_scan_start():
+        """Request a scan to start."""
+        app.config["SCAN_REQUESTED"] = True
+        data = request.get_json(silent=True) or {}
+        if "freq_start" in data:
+            app.config["SCAN_FREQ_START"] = float(data["freq_start"])
+        if "freq_stop" in data:
+            app.config["SCAN_FREQ_STOP"] = float(data["freq_stop"])
+        return jsonify({"status": "scan_requested"})
+
+    @app.route("/api/scan/stop", methods=["POST"])
+    def api_scan_stop():
+        """Request scanning to stop."""
+        app.config["SCAN_REQUESTED"] = False
+        return jsonify({"status": "stop_requested"})
 
 
 def _float_or_none(value: str | None) -> float | None:

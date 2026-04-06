@@ -44,7 +44,7 @@ fingerprint:
   # Minimum SNR (dB) to attempt modulation classification
   min_snr_db: 8.0
   # Guard bandwidth factor for signal isolation filter
-  guard_factor: 1.5
+  guard_factor: 3.0
   # FIR filter order for signal isolation
   filter_numtaps: 101
   # ACF search range in milliseconds

@@ -112,17 +112,37 @@ class ModulationClassifier:
     def _decide(
         self, features: ModulationFeatures, bandwidth_hz: float
     ) -> tuple[ModulationType, float]:
-        """Apply the decision tree to classify modulation."""
+        """Apply the decision tree to classify modulation.
+
+        The tree uses bandwidth as a strong early discriminator alongside
+        spectral features. Wideband signals (>100 kHz) are almost always
+        FM broadcast. Narrowband signals (<50 kHz) require feature analysis.
+        """
         th = self._thresholds
         env_th = th["envelope_variance_threshold"]
         env_ook = th["envelope_variance_ook"]
         if_high = th["inst_freq_variance_high"]
         sf_digital = th["spectral_flatness_digital"]
-        pd_rate = th["phase_discontinuity_rate"]
         if_kurt_fsk = th["inst_freq_kurtosis_fsk"]
         wfm_bw = th["wideband_fm_min_bw_hz"]
 
-        # Step 1: AM-family — high envelope modulation
+        # Step 0: Bandwidth-aware pre-classification for wideband signals.
+        # A signal >100 kHz wide is almost certainly FM broadcast — no digital
+        # mode occupies that much bandwidth in VHF/UHF. Only override if
+        # envelope variance is very high (clear AM, e.g. AM broadcast).
+        if bandwidth_hz >= wfm_bw:
+            # For true AM, envelope variance is moderate (0.1-0.5) and
+            # inst_freq_variance is very low. Very high envelope variance
+            # (>1.0) is more likely filter artefacts on an FM signal.
+            if (features.envelope_variance > 0.15
+                    and features.envelope_variance < 1.0
+                    and features.inst_freq_variance < if_high * 0.5):
+                return ModulationType.AM, 0.7
+            # Wideband signal: default to FM
+            return ModulationType.FM, max(0.5, min(1.0,
+                features.inst_freq_variance / (if_high * 3) + 0.4))
+
+        # Step 1: AM-family — high envelope modulation, low freq modulation
         if features.envelope_variance > env_th and features.inst_freq_variance < if_high:
             if features.envelope_variance > env_ook:
                 conf = min(1.0, (features.envelope_variance - env_ook) / 0.3 + 0.5)
@@ -131,33 +151,29 @@ class ModulationClassifier:
             return ModulationType.AM, conf
 
         # Step 2: FM-family — high instantaneous frequency variation
-        if features.inst_freq_variance > if_high and features.envelope_variance < env_th:
-            if bandwidth_hz >= wfm_bw:
-                conf = min(1.0, features.inst_freq_variance / (if_high * 5) + 0.3)
-                return ModulationType.FM, conf
-            else:
+        if features.inst_freq_variance > if_high:
+            if features.envelope_variance < env_th * 2:
                 conf = min(1.0, features.inst_freq_variance / (if_high * 5) + 0.3)
                 return ModulationType.NFM, conf
 
-        # Step 3: Digital modulations — noise-like spectrum
-        if features.spectral_flatness > sf_digital:
+        # Step 3: Digital modulations — noise-like spectrum + narrowband
+        if features.spectral_flatness > sf_digital and bandwidth_hz < wfm_bw:
             # FSK: discrete frequency states + high kurtosis
             if features.num_freq_states >= 2 and features.inst_freq_kurtosis > if_kurt_fsk:
                 conf = min(1.0, 0.4 + 0.1 * features.num_freq_states)
                 return ModulationType.FSK, conf
 
-            # PSK: phase discontinuities above threshold
-            # Normalise discontinuities by signal length
-            disc_rate = features.phase_discontinuities / max(len([0]) * 100, 1)
-            if features.phase_discontinuities > 50 and features.spectral_flatness > sf_digital:
-                conf = min(1.0, 0.3 + features.spectral_flatness * 0.5)
+            # PSK: many phase discontinuities + low envelope variance +
+            # narrowband (< 50 kHz). This prevents wideband FM from
+            # being misclassified as PSK.
+            if (features.phase_discontinuities > 200
+                    and features.envelope_variance < env_th
+                    and bandwidth_hz < 50_000):
+                conf = min(1.0, 0.3 + features.spectral_flatness * 0.4)
                 return ModulationType.PSK, conf
 
-        # Step 4: Ambiguous — check if it leans FM or digital
-        if features.inst_freq_variance > if_high * 0.5:
-            # Weak FM characteristics
-            if bandwidth_hz >= wfm_bw:
-                return ModulationType.FM, 0.3
+        # Step 4: Weak FM characteristics
+        if features.inst_freq_variance > if_high * 0.3:
             return ModulationType.NFM, 0.3
 
         return ModulationType.UNKNOWN, 0.0

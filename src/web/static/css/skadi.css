@@ -72,6 +72,76 @@ body {
     50% { opacity: 0.6; }
 }
 
+/* Scan Controls */
+#scan-controls {
+    padding: 10px 24px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.control-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+}
+
+.control-group label { color: var(--text-secondary); }
+
+.control-group input {
+    width: 80px;
+    padding: 4px 8px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 0.85rem;
+}
+
+.btn-scan {
+    padding: 5px 16px;
+    background: var(--accent);
+    color: var(--bg-primary);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 0.85rem;
+}
+
+.btn-scan:hover { opacity: 0.85; }
+.btn-scan:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.btn-stop {
+    padding: 5px 16px;
+    background: var(--threat-critical);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 0.85rem;
+}
+
+.btn-stop:hover { opacity: 0.85; }
+.btn-stop:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.error-banner {
+    width: 100%;
+    padding: 8px 16px;
+    background: rgba(220, 53, 69, 0.2);
+    border: 1px solid var(--threat-critical);
+    border-radius: 4px;
+    color: var(--threat-critical);
+    font-size: 0.85rem;
+    margin-top: 4px;
+}
+
 /* Main Layout */
 main {
     padding: 20px 24px;

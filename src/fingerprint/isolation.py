@@ -31,7 +31,7 @@ class SignalIsolator:
     def __init__(
         self,
         sample_rate: float = 2_048_000,
-        guard_factor: float = 1.5,
+        guard_factor: float = 3.0,
         filter_numtaps: int = 101,
     ) -> None:
         self._sample_rate = sample_rate
@@ -82,8 +82,14 @@ class SignalIsolator:
         # Discard filter transient
         filtered = filtered[self._filter_numtaps:]
 
-        # Compute decimation factor
-        decim_factor = max(1, int(self._sample_rate / filter_bw))
+        # Compute decimation factor — for wideband signals (>100 kHz),
+        # use minimal decimation to preserve signal quality
+        if signal_bandwidth_hz > 100_000:
+            # Wideband: keep high sample rate for better feature extraction
+            decim_factor = max(1, int(self._sample_rate / (signal_bandwidth_hz * 4)))
+        else:
+            decim_factor = max(1, int(self._sample_rate / filter_bw))
+
         if decim_factor > 1:
             filtered = filtered[::decim_factor]
 
