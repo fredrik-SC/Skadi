@@ -26,6 +26,7 @@ from src.detection.detector import SignalDetector
 from src.detection.exclusions import ExclusionFilter
 from src.detection.noise import NoiseEstimator
 from src.detectionlog.database import DetectionLog
+from src.fingerprint.extractor import FingerprintExtractor
 from src.sdr.interface import SDRInterface
 from src.sdr.scanner import SpectrumScanner
 
@@ -130,11 +131,19 @@ def main() -> None:
     log_path = Path(PROJECT_ROOT / config["logging"]["database_path"])
     detection_log = DetectionLog(log_path)
 
+    # Set up fingerprint extractor
+    fp_config = config.get("fingerprint", {})
+    fingerprint_extractor = FingerprintExtractor(
+        sample_rate=float(sdr_config.get("sample_rate", 2_048_000)),
+        config=fp_config,
+    )
+
     with SDRInterface(sdr_config) as sdr:
         scanner = SpectrumScanner(
             sdr, scan_config, sdr_config, detection_config,
             exclusion_filter=exclusion_filter,
             detection_log=detection_log,
+            fingerprint_extractor=fingerprint_extractor,
         )
         print(f"Total steps: {scanner.num_steps}\n")
 
@@ -142,24 +151,32 @@ def main() -> None:
 
     detection_log.close()
 
+    # Build fingerprint lookup by signal identity
+    fp_lookup = {id(fp.signal): fp for fp in result.fingerprints}
+
     # Print results table
-    print("\n" + "=" * 75)
-    print(f"{'DETECTED SIGNALS':^75}")
-    print("=" * 75)
-    print(f"{'#':<4} {'Freq (MHz)':<14} {'BW (kHz)':<12} {'Peak (dBm)':<13} "
-          f"{'Mean (dBm)':<13} {'SNR (dB)':<10}")
-    print("-" * 75)
+    print("\n" + "=" * 90)
+    print(f"{'DETECTED SIGNALS':^90}")
+    print("=" * 90)
+    print(f"{'#':<4} {'Freq (MHz)':<13} {'BW (kHz)':<10} {'Mod':<8} "
+          f"{'Conf':<6} {'Peak (dBm)':<12} {'SNR (dB)':<10} {'ACF (ms)':<10}")
+    print("-" * 90)
 
     if not result.signals:
         print("  No signals detected.")
     else:
         for i, sig in enumerate(result.signals, 1):
+            fp = fp_lookup.get(id(sig))
+            mod_str = fp.modulation.value if fp else "?"
+            conf_str = f"{fp.modulation_confidence:.2f}" if fp else "?"
+            acf_str = f"{fp.acf_ms:.1f}" if fp and fp.acf_ms else "-"
+            bw = fp.bandwidth_hz if fp else sig.bandwidth_hz
             print(
-                f"{i:<4} {sig.centre_freq_hz / 1e6:<14.3f} "
-                f"{sig.bandwidth_hz / 1e3:<12.1f} "
-                f"{sig.peak_power_dbm:<13.1f} "
-                f"{sig.mean_power_dbm:<13.1f} "
-                f"{sig.snr_db:<10.1f}"
+                f"{i:<4} {sig.centre_freq_hz / 1e6:<13.3f} "
+                f"{bw / 1e3:<10.1f} "
+                f"{mod_str:<8} {conf_str:<6} "
+                f"{sig.peak_power_dbm:<12.1f} "
+                f"{sig.snr_db:<10.1f} {acf_str:<10}"
             )
 
     print("-" * 75)

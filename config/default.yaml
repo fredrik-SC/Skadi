@@ -40,6 +40,19 @@ detection:
   # Adaptive noise floor: EMA alpha (0-1, higher = more responsive)
   noise_alpha: 0.3
 
+fingerprint:
+  # Minimum SNR (dB) to attempt modulation classification
+  min_snr_db: 8.0
+  # Guard bandwidth factor for signal isolation filter
+  guard_factor: 1.5
+  # FIR filter order for signal isolation
+  filter_numtaps: 101
+  # ACF search range in milliseconds
+  acf_min_lag_ms: 1.0
+  acf_max_lag_ms: 5000.0
+  # ACF minimum peak strength to report (0.0-1.0)
+  acf_min_peak_strength: 0.3
+
 classification:
   # Bandwidth matching tolerance (fraction, e.g. 0.15 = +/- 15%)
   bandwidth_tolerance: 0.15

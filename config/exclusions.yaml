@@ -14,6 +14,6 @@ exclusions:
   # - freq_hz: 88100000
   #   bandwidth_hz: 200000
   #   label: "FM 88.1 MHz"
-  # - freq_hz: 162550000
-  #   bandwidth_hz: 25000
-  #   label: "NOAA Weather"
+  # - freq_hz: 89100000
+  #   bandwidth_hz: 200000
+  #   label: "BBC Radio 2 (local)"

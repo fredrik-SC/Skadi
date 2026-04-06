@@ -28,6 +28,7 @@ class ScanStep:
     psd_dbm: np.ndarray
     noise_floor_dbm: float
     timestamp: float
+    iq_data: np.ndarray | None = None
 
 
 @dataclass
@@ -73,4 +74,5 @@ class ScanResult:
     duration_seconds: float
     signals: list[DetectedSignal] = field(default_factory=list)
     scan_steps: list[ScanStep] = field(default_factory=list)
+    fingerprints: list = field(default_factory=list)
     timestamp: float = 0.0

@@ -19,6 +19,8 @@ from src.detection.exclusions import ExclusionFilter
 from src.detection.models import DetectedSignal, ScanResult, ScanStep
 from src.detection.noise import NoiseEstimator
 from src.detectionlog.database import DetectionLog
+from src.fingerprint.extractor import FingerprintExtractor
+from src.fingerprint.models import SignalFingerprint
 from src.sdr.interface import SDRInterface
 
 logger = logging.getLogger(__name__)
@@ -42,6 +44,7 @@ class SpectrumScanner:
         signal_detector: Optional SignalDetector (default: from detection_config).
         exclusion_filter: Optional ExclusionFilter for suppressing known signals.
         detection_log: Optional DetectionLog for persisting detections to SQLite.
+        fingerprint_extractor: Optional FingerprintExtractor for signal fingerprinting.
 
     Example:
         with SDRInterface(config["sdr"]) as sdr:
@@ -61,6 +64,7 @@ class SpectrumScanner:
         signal_detector: SignalDetector | None = None,
         exclusion_filter: ExclusionFilter | None = None,
         detection_log: DetectionLog | None = None,
+        fingerprint_extractor: FingerprintExtractor | None = None,
     ) -> None:
         self._sdr = sdr
 
@@ -83,6 +87,7 @@ class SpectrumScanner:
         self._signal_detector = signal_detector or SignalDetector(detection_config)
         self._exclusion_filter = exclusion_filter
         self._detection_log = detection_log
+        self._fingerprint_extractor = fingerprint_extractor
 
         # Pre-compute the Hann window
         self._window = np.hanning(self._fft_size).astype(np.float32)
@@ -192,12 +197,16 @@ class SpectrumScanner:
         # Estimate noise floor
         noise_floor = self._noise_estimator.estimate(psd_dbm)
 
+        # Retain IQ data for fingerprinting if extractor is configured
+        retained_iq = iq_data if self._fingerprint_extractor is not None else None
+
         return ScanStep(
             centre_freq_hz=actual_freq,
             freqs_hz=freqs_hz,
             psd_dbm=psd_dbm,
             noise_floor_dbm=noise_floor,
             timestamp=timestamp,
+            iq_data=retained_iq,
         )
 
     def sweep(
@@ -220,6 +229,7 @@ class SpectrumScanner:
         frequencies = self.step_frequencies
         total_steps = len(frequencies)
         all_signals: list[DetectedSignal] = []
+        all_fingerprints: list[SignalFingerprint] = []
         scan_steps: list[ScanStep] = []
 
         # Reset adaptive noise estimator for fresh sweep
@@ -243,7 +253,15 @@ class SpectrumScanner:
             if self._exclusion_filter is not None:
                 signals = self._exclusion_filter.filter(signals)
 
+            # Extract fingerprints if configured
+            if self._fingerprint_extractor is not None and signals:
+                step_fps = self._fingerprint_extractor.extract_batch(signals, step)
+                all_fingerprints.extend(step_fps)
+
             all_signals.extend(signals)
+
+            # Free IQ data after fingerprinting to save memory
+            step.iq_data = None
 
             if keep_psd:
                 scan_steps.append(step)
@@ -264,7 +282,18 @@ class SpectrumScanner:
 
         # Log detections to database if configured
         if self._detection_log is not None and all_signals:
-            self._detection_log.log_signals(all_signals)
+            # Build a fingerprint lookup for enriched logging
+            fp_by_signal: dict[int, SignalFingerprint] = {}
+            for fp in all_fingerprints:
+                fp_by_signal[id(fp.signal)] = fp
+
+            for signal in all_signals:
+                fp = fp_by_signal.get(id(signal))
+                self._detection_log.log_signal(
+                    signal,
+                    modulation=fp.modulation.value if fp else None,
+                    acf_value=fp.acf_ms if fp else None,
+                )
 
         logger.info(
             "Sweep complete: %d signal(s) detected in %.1f seconds",
@@ -278,5 +307,6 @@ class SpectrumScanner:
             duration_seconds=duration,
             signals=all_signals,
             scan_steps=scan_steps,
+            fingerprints=all_fingerprints,
             timestamp=sweep_start,
         )

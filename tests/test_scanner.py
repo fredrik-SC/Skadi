@@ -193,7 +193,7 @@ class TestSpectrumScanner:
         assert result.signals == []
 
     def test_sweep_with_detection_log(self, scan_config, sdr_config, detection_config):
-        """Detection log receives all signals after the sweep."""
+        """Detection log receives signals after the sweep."""
         iq = generate_test_iq(
             tones=[(500_000, 0.5)],  # Add a tone so signals are detected
             num_samples=1_024_000,
@@ -201,7 +201,7 @@ class TestSpectrumScanner:
         )
         mock_sdr = make_mock_sdr(iq)
         mock_log = MagicMock()
-        mock_log.log_signals.return_value = [1, 2, 3]
+        mock_log.log_signal.return_value = 1
 
         scanner = SpectrumScanner(
             mock_sdr, scan_config, sdr_config, detection_config,
@@ -210,6 +210,5 @@ class TestSpectrumScanner:
         result = scanner.sweep()
 
         if result.signals:
-            mock_log.log_signals.assert_called_once()
-            logged_signals = mock_log.log_signals.call_args[0][0]
-            assert len(logged_signals) == len(result.signals)
+            # log_signal called once per signal
+            assert mock_log.log_signal.call_count == len(result.signals)
