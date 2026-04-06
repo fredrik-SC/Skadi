@@ -9,12 +9,20 @@
     let sortColumn = 'timestamp_utc';
     let sortDirection = 'desc';
 
+    // Load data immediately on page load (don't wait for SocketIO)
+    console.log('Skadi JS loaded, calling loadHistory...');
+    try {
+        loadHistory();
+        pollStatus();
+    } catch(e) {
+        console.error('Init error:', e);
+    }
+
     // --- SocketIO Events ---
 
     socket.on('connect', function() {
         console.log('Connected to Skadi');
         loadHistory();
-        pollStatus();
     });
 
     socket.on('disconnect', function() {
