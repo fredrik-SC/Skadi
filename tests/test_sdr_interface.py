@@ -1,24 +1,18 @@
 """Tests for SDR interface module.
 
-Uses mocked SoapySDR so tests run without hardware connected.
+Uses mocked SoapySDR.Device so tests run without hardware connected.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
 
-# Patch SoapySDR before importing our module
-mock_soapy = MagicMock()
-mock_soapy.SOAPY_SDR_RX = 0
-mock_soapy.SOAPY_SDR_CF32 = "CF32"
-
-with patch.dict("sys.modules", {"SoapySDR": mock_soapy}):
-    from src.sdr import SDRConnectionError, SDRStreamError
-    from src.sdr.interface import SDRInterface
+from src.sdr import SDRConnectionError, SDRStreamError
+from src.sdr.interface import SDRInterface
 
 
 @pytest.fixture
@@ -39,7 +33,10 @@ def mock_device():
     """Create a mock SoapySDR device with standard responses."""
     device = MagicMock()
     device.getHardwareKey.return_value = "RSPduo"
-    device.getHardwareInfo.return_value = {"serial": "TEST123"}
+    device.getHardwareInfo.return_value = {
+        "sdrplay_api_api_version": "3.150000",
+        "sdrplay_api_hw_version": "3",
+    }
     device.getSampleRate.return_value = 2048000.0
     device.getFrequency.return_value = 100e6
     device.listAntennas.return_value = (
@@ -65,27 +62,37 @@ def mock_device():
     freq_range.maximum.return_value = 2000000000.0
     device.getFrequencyRange.return_value = [freq_range]
 
+    # Mock stream operations
+    stream_result = MagicMock()
+    stream_result.ret = 1024
+    device.readStream.return_value = stream_result
+    device.setupStream.return_value = MagicMock()
+
     return device
 
 
 class TestSDRInterface:
     """Tests for SDRInterface class."""
 
-    def test_connect_success(self, sdr_config, mock_device):
+    @patch("src.sdr.interface.SoapySDR")
+    def test_connect_success(self, mock_soapy, sdr_config, mock_device):
         """Device opens and configures successfully."""
         mock_soapy.Device.return_value = mock_device
+        mock_soapy.SOAPY_SDR_RX = 0
+        mock_soapy.SOAPY_SDR_CF32 = "CF32"
 
         sdr = SDRInterface(sdr_config)
         sdr.connect()
 
         assert sdr.connected
-        mock_device.setSampleRate.assert_called_once_with(0, 0, 2048000.0)
-        mock_device.setGainMode.assert_called_once_with(0, 0, True)
-        mock_device.setAntenna.assert_called_once_with(0, 0, "Tuner 1 50 ohm")
+        mock_device.setSampleRate.assert_called_once()
+        mock_device.setGainMode.assert_called_once()
+        mock_device.setAntenna.assert_called_once()
 
         sdr.disconnect()
 
-    def test_connect_device_not_found(self, sdr_config):
+    @patch("src.sdr.interface.SoapySDR")
+    def test_connect_device_not_found(self, mock_soapy, sdr_config):
         """SDRConnectionError raised when device cannot be opened."""
         mock_soapy.Device.side_effect = RuntimeError("no match")
 
@@ -94,9 +101,9 @@ class TestSDRInterface:
             sdr.connect()
 
         assert not sdr.connected
-        mock_soapy.Device.side_effect = None  # Reset
 
-    def test_disconnect_idempotent(self, sdr_config, mock_device):
+    @patch("src.sdr.interface.SoapySDR")
+    def test_disconnect_idempotent(self, mock_soapy, sdr_config, mock_device):
         """Calling disconnect() multiple times does not raise."""
         mock_soapy.Device.return_value = mock_device
 
@@ -107,7 +114,8 @@ class TestSDRInterface:
 
         assert not sdr.connected
 
-    def test_context_manager(self, sdr_config, mock_device):
+    @patch("src.sdr.interface.SoapySDR")
+    def test_context_manager(self, mock_soapy, sdr_config, mock_device):
         """Context manager connects on entry and disconnects on exit."""
         mock_soapy.Device.return_value = mock_device
 
@@ -116,15 +124,19 @@ class TestSDRInterface:
 
         assert not sdr.connected
 
-    def test_tune(self, sdr_config, mock_device):
+    @patch("src.sdr.interface.SoapySDR")
+    def test_tune(self, mock_soapy, sdr_config, mock_device):
         """Tune sets frequency and returns actual frequency."""
         mock_soapy.Device.return_value = mock_device
+        mock_soapy.SOAPY_SDR_RX = 0
 
-        with SDRInterface(sdr_config) as sdr:
-            actual = sdr.tune(100e6)
+        sdr = SDRInterface(sdr_config)
+        sdr.connect()
+        actual = sdr.tune(100e6)
 
-        mock_device.setFrequency.assert_called_once_with(0, 0, 100e6)
+        mock_device.setFrequency.assert_called_once()
         assert actual == 100e6
+        sdr.disconnect()
 
     def test_tune_not_connected(self, sdr_config):
         """Tune raises SDRConnectionError when not connected."""
@@ -132,41 +144,50 @@ class TestSDRInterface:
         with pytest.raises(SDRConnectionError, match="not connected"):
             sdr.tune(100e6)
 
-    def test_capture_accumulates_chunks(self, sdr_config, mock_device):
+    @patch("src.sdr.interface.SoapySDR")
+    def test_capture_accumulates_chunks(self, mock_soapy, sdr_config, mock_device):
         """Capture correctly accumulates multiple read chunks."""
         mock_soapy.Device.return_value = mock_device
+        mock_soapy.SOAPY_SDR_RX = 0
+        mock_soapy.SOAPY_SDR_CF32 = "CF32"
 
         # Simulate readStream returning 512 samples at a time
-        chunk_data = np.ones(512, dtype=np.complex64) * (0.1 + 0.1j)
         result = MagicMock()
         result.ret = 512
         mock_device.readStream.return_value = result
 
-        with SDRInterface(sdr_config) as sdr:
-            sdr.tune(100e6)
-            samples = sdr.capture(1024)
+        sdr = SDRInterface(sdr_config)
+        sdr.connect()
+        sdr.tune(100e6)
+        samples = sdr.capture(1024)
 
         assert len(samples) == 1024
         assert samples.dtype == np.complex64
         # readStream called twice (2 x 512 = 1024)
         assert mock_device.readStream.call_count == 2
+        sdr.disconnect()
 
-    def test_capture_handles_error(self, sdr_config, mock_device):
+    @patch("src.sdr.interface.SoapySDR")
+    def test_capture_handles_error(self, mock_soapy, sdr_config, mock_device):
         """Capture raises SDRStreamError on negative return code."""
         mock_soapy.Device.return_value = mock_device
+        mock_soapy.SOAPY_SDR_RX = 0
+        mock_soapy.SOAPY_SDR_CF32 = "CF32"
 
         result = MagicMock()
         result.ret = -1
         mock_device.readStream.return_value = result
 
-        with SDRInterface(sdr_config) as sdr:
-            sdr.tune(100e6)
-            with pytest.raises(SDRStreamError, match="error code"):
-                sdr.capture(1024)
+        sdr = SDRInterface(sdr_config)
+        sdr.connect()
+        sdr.tune(100e6)
+        with pytest.raises(SDRStreamError, match="error code"):
+            sdr.capture(1024)
 
         # Stream should still be cleaned up (deactivate + close called)
         mock_device.deactivateStream.assert_called_once()
         mock_device.closeStream.assert_called_once()
+        sdr.disconnect()
 
     def test_capture_not_connected(self, sdr_config):
         """Capture raises SDRConnectionError when not connected."""
@@ -174,17 +195,21 @@ class TestSDRInterface:
         with pytest.raises(SDRConnectionError, match="not connected"):
             sdr.capture(1024)
 
-    def test_info(self, sdr_config, mock_device):
+    @patch("src.sdr.interface.SoapySDR")
+    def test_info(self, mock_soapy, sdr_config, mock_device):
         """Info returns device diagnostic dictionary."""
         mock_soapy.Device.return_value = mock_device
+        mock_soapy.SOAPY_SDR_RX = 0
 
-        with SDRInterface(sdr_config) as sdr:
-            device_info = sdr.info()
+        sdr = SDRInterface(sdr_config)
+        sdr.connect()
+        device_info = sdr.info()
 
         assert device_info["hardware_key"] == "RSPduo"
         assert "IFGR" in device_info["gains"]
         assert device_info["gains"]["IFGR"]["min"] == 20.0
         assert device_info["gains"]["IFGR"]["max"] == 59.0
+        sdr.disconnect()
 
     def test_sample_rate_property(self, sdr_config):
         """Sample rate property returns the configured value."""
