@@ -262,6 +262,7 @@ def main() -> None:
                 debug=False,
                 use_reloader=False,
                 log_output=False,
+                allow_unsafe_werkzeug=True,
             )
         except KeyboardInterrupt:
             pass
