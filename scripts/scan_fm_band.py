@@ -21,6 +21,8 @@ import numpy as np
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from src.classification.artemis_db import ArtemisDB
+from src.classification.classifier import SignalClassifier
 from src.config import load_config, PROJECT_ROOT
 from src.detection.detector import SignalDetector
 from src.detection.exclusions import ExclusionFilter
@@ -138,12 +140,21 @@ def main() -> None:
         config=fp_config,
     )
 
+    # Set up Artemis classifier
+    artemis_path = PROJECT_ROOT / "data" / "artemis.db"
+    signal_classifier = None
+    if artemis_path.exists():
+        artemis_db = ArtemisDB(artemis_path)
+        signal_classifier = SignalClassifier(artemis_db, config.get("classification", {}))
+        print(f"Artemis DB: {len(artemis_db.signals)} signals loaded")
+
     with SDRInterface(sdr_config) as sdr:
         scanner = SpectrumScanner(
             sdr, scan_config, sdr_config, detection_config,
             exclusion_filter=exclusion_filter,
             detection_log=detection_log,
             fingerprint_extractor=fingerprint_extractor,
+            signal_classifier=signal_classifier,
         )
         print(f"Total steps: {scanner.num_steps}\n")
 

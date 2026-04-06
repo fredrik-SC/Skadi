@@ -14,6 +14,7 @@ from typing import Any
 
 import numpy as np
 
+from src.classification.classifier import ClassificationResult, SignalClassifier
 from src.detection.detector import SignalDetector
 from src.detection.exclusions import ExclusionFilter
 from src.detection.models import DetectedSignal, ScanResult, ScanStep
@@ -45,6 +46,7 @@ class SpectrumScanner:
         exclusion_filter: Optional ExclusionFilter for suppressing known signals.
         detection_log: Optional DetectionLog for persisting detections to SQLite.
         fingerprint_extractor: Optional FingerprintExtractor for signal fingerprinting.
+        signal_classifier: Optional SignalClassifier for Artemis DB matching.
 
     Example:
         with SDRInterface(config["sdr"]) as sdr:
@@ -65,6 +67,7 @@ class SpectrumScanner:
         exclusion_filter: ExclusionFilter | None = None,
         detection_log: DetectionLog | None = None,
         fingerprint_extractor: FingerprintExtractor | None = None,
+        signal_classifier: SignalClassifier | None = None,
     ) -> None:
         self._sdr = sdr
 
@@ -88,6 +91,7 @@ class SpectrumScanner:
         self._exclusion_filter = exclusion_filter
         self._detection_log = detection_log
         self._fingerprint_extractor = fingerprint_extractor
+        self._classifier = signal_classifier
 
         # Pre-compute the Hann window
         self._window = np.hanning(self._fft_size).astype(np.float32)
@@ -230,6 +234,7 @@ class SpectrumScanner:
         total_steps = len(frequencies)
         all_signals: list[DetectedSignal] = []
         all_fingerprints: list[SignalFingerprint] = []
+        classification_results: dict[int, ClassificationResult] = {}
         scan_steps: list[ScanStep] = []
 
         # Reset adaptive noise estimator for fresh sweep
@@ -254,9 +259,22 @@ class SpectrumScanner:
                 signals = self._exclusion_filter.filter(signals)
 
             # Extract fingerprints if configured
+            step_fps: list[SignalFingerprint] = []
             if self._fingerprint_extractor is not None and signals:
                 step_fps = self._fingerprint_extractor.extract_batch(signals, step)
                 all_fingerprints.extend(step_fps)
+
+            # Classify fingerprints against Artemis DB if configured
+            if self._classifier is not None and step_fps:
+                for fp in step_fps:
+                    try:
+                        result = self._classifier.classify(fp)
+                        classification_results[id(fp)] = result
+                    except Exception as e:
+                        logger.warning(
+                            "Classification failed for %.3f MHz: %s",
+                            fp.signal.centre_freq_hz / 1e6, e,
+                        )
 
             all_signals.extend(signals)
 
@@ -282,16 +300,26 @@ class SpectrumScanner:
 
         # Log detections to database if configured
         if self._detection_log is not None and all_signals:
-            # Build a fingerprint lookup for enriched logging
+            # Build lookups for enriched logging
             fp_by_signal: dict[int, SignalFingerprint] = {}
             for fp in all_fingerprints:
                 fp_by_signal[id(fp.signal)] = fp
 
             for signal in all_signals:
                 fp = fp_by_signal.get(id(signal))
+                cr = classification_results.get(id(fp)) if fp else None
+                matches = cr.matches if cr else []
+
                 self._detection_log.log_signal(
                     signal,
                     modulation=fp.modulation.value if fp else None,
+                    signal_type=matches[0].signal.name if matches else None,
+                    confidence_score=matches[0].confidence if matches else None,
+                    alt_match_1=matches[1].signal.name if len(matches) > 1 else None,
+                    alt_match_1_confidence=matches[1].confidence if len(matches) > 1 else None,
+                    alt_match_2=matches[2].signal.name if len(matches) > 2 else None,
+                    alt_match_2_confidence=matches[2].confidence if len(matches) > 2 else None,
+                    known_users=matches[0].signal.description[:200] if matches and matches[0].signal.description else None,
                     acf_value=fp.acf_ms if fp else None,
                 )
 
