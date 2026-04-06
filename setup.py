@@ -1,4 +1,4 @@
-"""Skaði package setup."""
+"""Skadi package setup."""
 
 from setuptools import setup, find_packages
 from pathlib import Path
@@ -15,6 +15,13 @@ setup(
     python_requires=">=3.10",
     packages=find_packages(where="src"),
     package_dir={"": "src"},
+    package_data={
+        "web": [
+            "templates/*.html",
+            "static/css/*.css",
+            "static/js/*.js",
+        ],
+    },
     install_requires=[
         "numpy>=1.24.0",
         "scipy>=1.10.0",
