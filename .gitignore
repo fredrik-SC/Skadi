@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
+venv/
+.venv/
+
+# Environment variables
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data files (large / generated)
+data/*.db
+
+# IQ sample captures
+data/iq_samples/
+
+# Matplotlib output (keep project logo and web assets)
+*.png
+!Skaði logo.png
+!src/web/static/**/*.png
+
+# Claude
+.claude/

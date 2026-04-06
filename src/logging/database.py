@@ -1,0 +1,1 @@
+"""SQLite detection log operations."""

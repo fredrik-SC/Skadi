@@ -1,0 +1,57 @@
+# Skaði Default Configuration
+# ============================
+
+sdr:
+  # SDR device driver
+  driver: sdrplay
+  # Device mode: ST (Single Tuner) for v1.0
+  mode: ST
+  # Sample rate in Hz (2.048 MHz is a good default for RSPduo)
+  sample_rate: 2048000
+  # IF bandwidth in Hz (auto = let SoapySDR choose optimal)
+  bandwidth: 0
+  # Gain reduction in dB (0 = AGC enabled)
+  gain_reduction: 0
+  # AGC enabled
+  agc: true
+
+scan:
+  # Frequency range in Hz
+  freq_start: 30000000     # 30 MHz
+  freq_stop: 3000000000    # 3 GHz
+  # Step size in Hz (how much to advance centre frequency each step)
+  step_size: 2000000       # 2 MHz (matches sample_rate for contiguous coverage)
+  # Dwell time per step in seconds
+  dwell_time: 0.5
+  # FFT size (number of points)
+  fft_size: 4096
+  # Number of FFT averages per step
+  fft_averages: 10
+
+detection:
+  # Signal detection threshold above noise floor in dB
+  threshold_db: 10.0
+  # Minimum signal bandwidth in Hz to count as a detection
+  min_bandwidth_hz: 500
+  # Maximum number of concurrent signals to track per scan step
+  max_signals_per_step: 10
+
+classification:
+  # Bandwidth matching tolerance (fraction, e.g. 0.15 = +/- 15%)
+  bandwidth_tolerance: 0.15
+  # Maximum number of matches to return per signal
+  max_matches: 3
+  # Minimum confidence score to include a match (0.0 - 1.0)
+  min_confidence: 0.1
+
+logging:
+  # Detection log database path (relative to project root)
+  database_path: data/detections.db
+  # Log level for console output
+  level: INFO
+
+web:
+  # Web server host
+  host: 127.0.0.1
+  # Web server port
+  port: 5000

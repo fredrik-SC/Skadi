@@ -1,0 +1,76 @@
+# Skaði Threat Level Configuration
+# ==================================
+# Maps signal categories to threat levels.
+# Threat levels: CRITICAL, HIGH, MEDIUM, LOW, INFORMATIONAL
+#
+# This is a simplified model for v1.0. SEIARA handles
+# sophisticated threat assessment when integrated.
+
+# Default threat level for signals that don't match any category
+default_threat_level: MEDIUM
+
+# Keyword-based matching against Artemis signal descriptions.
+# Each rule has a list of keywords (matched case-insensitively against
+# signal name and description) and the assigned threat level.
+# Rules are evaluated in order; first match wins.
+
+rules:
+  # CRITICAL — Direct operational threat
+  - threat_level: CRITICAL
+    keywords:
+      - "military encrypted"
+      - "military digital encryption"
+      - "spetsnaz"
+      - "russian military"
+      - "chinese military"
+      - "north korean"
+
+  # HIGH — Military or government presence
+  - threat_level: HIGH
+    keywords:
+      - "military"
+      - "government"
+      - "diplomatic"
+      - "intelligence"
+      - "nato"
+      - "stanag"
+
+  # MEDIUM — Unknown or unclassified digital signals
+  - threat_level: MEDIUM
+    keywords:
+      - "unknown"
+      - "unidentified"
+
+  # LOW — Commercial and civilian
+  - threat_level: LOW
+    keywords:
+      - "commercial"
+      - "civilian"
+      - "amateur"
+      - "ham radio"
+      - "cb radio"
+      - "pmr"
+      - "frs"
+      - "gmrs"
+      - "wifi"
+      - "bluetooth"
+      - "lte"
+      - "gsm"
+      - "cdma"
+
+  # INFORMATIONAL — Benign infrastructure
+  - threat_level: INFORMATIONAL
+    keywords:
+      - "broadcast"
+      - "fm broadcast"
+      - "am broadcast"
+      - "dab"
+      - "navigation"
+      - "gps"
+      - "ndb"
+      - "vor"
+      - "weather"
+      - "volmet"
+      - "time signal"
+      - "wwv"
+      - "dcf77"

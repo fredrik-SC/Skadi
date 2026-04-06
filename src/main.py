@@ -1,0 +1,1 @@
+"""Skaði application entry point."""

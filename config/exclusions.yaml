@@ -1,0 +1,19 @@
+# Skaði Signal Exclusion List
+# =============================
+# Known/benign signals to skip during scanning.
+# Add frequencies here that are expected in your environment
+# and should not trigger detection events.
+
+exclusions:
+  # Each entry: centre frequency in Hz, with optional bandwidth and label
+  # - freq_hz: 100000000
+  #   bandwidth_hz: 200000
+  #   label: "Local FM station"
+
+  # Example exclusions (uncomment and adjust for your environment):
+  # - freq_hz: 88100000
+  #   bandwidth_hz: 200000
+  #   label: "FM 88.1 MHz"
+  # - freq_hz: 162550000
+  #   bandwidth_hz: 25000
+  #   label: "NOAA Weather"
