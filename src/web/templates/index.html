@@ -2,9 +2,74 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Skaði — RF Signal Identification</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Skadi — RF Signal Identification</title>
+    <link rel="stylesheet" href="/static/css/skadi.css">
 </head>
 <body>
-    <!-- Placeholder for Session 7 -->
+    <!-- Status Bar -->
+    <header id="status-bar">
+        <div class="status-left">
+            <h1>SKADI</h1>
+            <span class="subtitle">RF Signal Identification</span>
+        </div>
+        <div class="status-right">
+            <span id="scanner-status" class="badge badge-idle">IDLE</span>
+            <span id="sweep-count">Sweeps: 0</span>
+            <span id="total-detections">Detections: 0</span>
+            <span id="last-sweep">Last: --</span>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main>
+        <!-- Real-Time Alert Feed -->
+        <section id="alert-section">
+            <h2>Live Alerts</h2>
+            <div id="alert-feed">
+                <div class="empty-state">Waiting for detections...</div>
+            </div>
+        </section>
+
+        <!-- Detection History -->
+        <section id="history-section">
+            <h2>Detection History</h2>
+            <div class="filters">
+                <select id="filter-threat">
+                    <option value="">All Threat Levels</option>
+                    <option value="CRITICAL">CRITICAL</option>
+                    <option value="HIGH">HIGH</option>
+                    <option value="MEDIUM">MEDIUM</option>
+                    <option value="LOW">LOW</option>
+                    <option value="INFORMATIONAL">INFORMATIONAL</option>
+                </select>
+                <input type="number" id="filter-freq-min" placeholder="Min freq (MHz)" step="0.1">
+                <input type="number" id="filter-freq-max" placeholder="Max freq (MHz)" step="0.1">
+                <button id="btn-filter">Filter</button>
+                <button id="btn-refresh">Refresh</button>
+            </div>
+            <div class="table-container">
+                <table id="history-table">
+                    <thead>
+                        <tr>
+                            <th data-sort="timestamp_utc">Time</th>
+                            <th data-sort="frequency_hz">Freq (MHz)</th>
+                            <th data-sort="modulation">Mod</th>
+                            <th data-sort="signal_type">Signal Type</th>
+                            <th data-sort="confidence_score">Conf</th>
+                            <th data-sort="threat_level">Threat</th>
+                            <th data-sort="bandwidth_hz">BW (kHz)</th>
+                            <th data-sort="signal_strength_dbm">Power (dBm)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="history-body">
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/static/js/skadi.js"></script>
 </body>
 </html>

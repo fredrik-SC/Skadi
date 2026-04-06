@@ -1,0 +1,255 @@
+/* Skadi RF Signal Identification — Dashboard Styles */
+/* Dark theme, all offline, no external dependencies */
+
+:root {
+    --bg-primary: #1a1a2e;
+    --bg-secondary: #16213e;
+    --bg-card: #0f3460;
+    --text-primary: #e0e0e0;
+    --text-secondary: #a0a0a0;
+    --border: #2a2a4a;
+    --threat-critical: #dc3545;
+    --threat-high: #fd7e14;
+    --threat-medium: #ffc107;
+    --threat-low: #0d6efd;
+    --threat-info: #6c757d;
+    --accent: #00d4aa;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 100vh;
+}
+
+/* Status Bar */
+#status-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 24px;
+    background: var(--bg-secondary);
+    border-bottom: 2px solid var(--accent);
+}
+
+.status-left h1 {
+    font-size: 1.4rem;
+    color: var(--accent);
+    letter-spacing: 3px;
+    display: inline;
+}
+
+.status-left .subtitle {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    margin-left: 12px;
+}
+
+.status-right {
+    display: flex;
+    gap: 20px;
+    align-items: center;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.badge {
+    padding: 4px 12px;
+    border-radius: 4px;
+    font-weight: bold;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+}
+
+.badge-idle { background: var(--threat-info); color: white; }
+.badge-scanning { background: var(--accent); color: #1a1a2e; animation: pulse 1.5s infinite; }
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+/* Main Layout */
+main {
+    padding: 20px 24px;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+section { margin-bottom: 30px; }
+
+h2 {
+    font-size: 1.1rem;
+    color: var(--accent);
+    margin-bottom: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+/* Alert Feed */
+#alert-feed {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 400px;
+    overflow-y: auto;
+    padding-right: 8px;
+}
+
+.empty-state {
+    color: var(--text-secondary);
+    text-align: center;
+    padding: 40px;
+    font-style: italic;
+}
+
+/* Alert Card */
+.alert-card {
+    display: grid;
+    grid-template-columns: 100px 1fr 120px 80px 100px 80px;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    background: var(--bg-card);
+    border-radius: 6px;
+    border-left: 4px solid var(--threat-info);
+    animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.alert-card.threat-CRITICAL {
+    border-left-color: var(--threat-critical);
+    background: rgba(220, 53, 69, 0.15);
+    animation: slideIn 0.3s ease-out, criticalPulse 2s infinite;
+}
+
+@keyframes criticalPulse {
+    0%, 100% { box-shadow: none; }
+    50% { box-shadow: 0 0 12px rgba(220, 53, 69, 0.4); }
+}
+
+.alert-card.threat-HIGH { border-left-color: var(--threat-high); }
+.alert-card.threat-MEDIUM { border-left-color: var(--threat-medium); }
+.alert-card.threat-LOW { border-left-color: var(--threat-low); }
+.alert-card.threat-INFORMATIONAL { border-left-color: var(--threat-info); }
+
+.alert-threat {
+    font-weight: bold;
+    font-size: 0.75rem;
+    text-align: center;
+    padding: 3px 8px;
+    border-radius: 3px;
+    color: white;
+}
+
+.alert-threat.CRITICAL { background: var(--threat-critical); }
+.alert-threat.HIGH { background: var(--threat-high); }
+.alert-threat.MEDIUM { background: var(--threat-medium); color: #1a1a2e; }
+.alert-threat.LOW { background: var(--threat-low); }
+.alert-threat.INFORMATIONAL { background: var(--threat-info); }
+
+.alert-type { font-weight: 500; font-size: 0.9rem; }
+.alert-freq { color: var(--accent); font-family: monospace; }
+.alert-mod { color: var(--text-secondary); font-size: 0.85rem; }
+.alert-conf { color: var(--text-secondary); font-size: 0.85rem; }
+.alert-power { color: var(--text-secondary); font-family: monospace; font-size: 0.85rem; }
+
+/* Filters */
+.filters {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+.filters select,
+.filters input {
+    padding: 6px 10px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 0.85rem;
+}
+
+.filters button {
+    padding: 6px 16px;
+    background: var(--accent);
+    color: var(--bg-primary);
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 0.85rem;
+}
+
+.filters button:hover { opacity: 0.85; }
+
+/* History Table */
+.table-container {
+    overflow-x: auto;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+}
+
+#history-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+
+#history-table thead {
+    background: var(--bg-secondary);
+    position: sticky;
+    top: 0;
+}
+
+#history-table th {
+    padding: 10px 12px;
+    text-align: left;
+    color: var(--accent);
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+}
+
+#history-table th:hover { color: white; }
+#history-table th.sort-asc::after { content: " \25B2"; }
+#history-table th.sort-desc::after { content: " \25BC"; }
+
+#history-table td {
+    padding: 8px 12px;
+    border-top: 1px solid var(--border);
+    white-space: nowrap;
+}
+
+#history-table tbody tr:hover {
+    background: rgba(0, 212, 170, 0.08);
+}
+
+.threat-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 0.75rem;
+    font-weight: bold;
+    color: white;
+}
+
+.threat-badge.CRITICAL { background: var(--threat-critical); }
+.threat-badge.HIGH { background: var(--threat-high); }
+.threat-badge.MEDIUM { background: var(--threat-medium); color: #1a1a2e; }
+.threat-badge.LOW { background: var(--threat-low); }
+.threat-badge.INFORMATIONAL { background: var(--threat-info); }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-primary); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }

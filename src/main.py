@@ -3,16 +3,19 @@
 Orchestrates the complete RF signal identification pipeline:
 scan → detect → fingerprint → classify → threat assess → log.
 
+Runs a web dashboard alongside the scan loop for real-time monitoring.
+
 Usage:
-    python -m src.main [--single] [--start 88e6] [--stop 108e6] [--export]
+    python -m src.main [--single] [--start 88e6] [--stop 108e6] [--no-web]
 """
 
 from __future__ import annotations
 
 import argparse
 import logging
-import signal
-import sys
+import threading
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 from src.classification.artemis_db import ArtemisDB
@@ -32,55 +35,88 @@ logger = logging.getLogger(__name__)
 _shutdown_requested = False
 
 
-def _signal_handler(signum, frame):
-    """Handle Ctrl+C for graceful shutdown."""
+def _run_scan_loop(
+    sdr_config: dict,
+    scan_config: dict,
+    detection_config: dict,
+    config: dict,
+    exclusion_filter,
+    detection_log: DetectionLog,
+    fingerprint_extractor,
+    signal_classifier,
+    threat_mapper,
+    app=None,
+    broadcaster=None,
+    single: bool = False,
+) -> None:
+    """Run the scan loop in a thread (or main thread if no web server).
+
+    Args:
+        All pipeline components plus optional Flask app and broadcaster
+        for web integration.
+    """
     global _shutdown_requested
-    _shutdown_requested = True
-    print("\nShutdown requested... finishing current sweep.")
+    sweep_count = 0
 
-
-def _print_sweep_summary(result, detection_log):
-    """Print a summary table by reading from the detection log."""
-    # Read the most recent detections from the log
-    rows = detection_log.query(limit=len(result.signals) + 10)
-    # Sort by signal_strength descending (already stored)
-    rows.sort(key=lambda r: r.get("signal_strength_dbm") or -999, reverse=True)
-
-    print(f"\n{'=' * 110}")
-    print(f"{'SKAÐI DETECTION REPORT':^110}")
-    print(f"{'=' * 110}")
-    print(
-        f"{'#':<4} {'Freq (MHz)':<12} {'Mod':<8} {'Signal Type':<32} "
-        f"{'Conf':<6} {'Threat':<14} {'BW (kHz)':<10} {'Power (dBm)':<12}"
-    )
-    print("-" * 110)
-
-    if not rows:
-        print("  No signals detected.")
-    else:
-        for i, row in enumerate(rows[:30], 1):  # Top 30
-            freq = row.get("frequency_hz", 0) / 1e6
-            mod = row.get("modulation") or "?"
-            sig_type = (row.get("signal_type") or "UNKNOWN")[:30]
-            conf = row.get("confidence_score")
-            conf_str = f"{conf:.2f}" if conf is not None else "-"
-            threat = row.get("threat_level") or "?"
-            bw = (row.get("bandwidth_hz") or 0) / 1e3
-            power = row.get("signal_strength_dbm") or 0
-
-            print(
-                f"{i:<4} {freq:<12.3f} "
-                f"{mod:<8} {sig_type:<32} "
-                f"{conf_str:<6} {threat:<14} "
-                f"{bw:<10.1f} {power:<12.1f}"
+    try:
+        with SDRInterface(sdr_config) as sdr:
+            scanner = SpectrumScanner(
+                sdr, scan_config, sdr_config, detection_config,
+                exclusion_filter=exclusion_filter,
+                detection_log=detection_log,
+                fingerprint_extractor=fingerprint_extractor,
+                signal_classifier=signal_classifier,
+                threat_mapper=threat_mapper,
             )
 
-    print("-" * 110)
-    print(
-        f"Total: {len(result.signals)} signal(s) in {result.duration_seconds:.1f}s  |  "
-        f"Range: {result.freq_start_hz / 1e6:.0f}-{result.freq_stop_hz / 1e6:.0f} MHz"
-    )
-    print("=" * 110)
+            while not _shutdown_requested:
+                sweep_count += 1
+                logger.info("--- Sweep #%d ---", sweep_count)
+
+                if app:
+                    app.config["SCANNER_ACTIVE"] = True
+                    if broadcaster:
+                        broadcaster.broadcast_status({
+                            "scanning": True,
+                            "sweep_count": sweep_count,
+                        })
+
+                result = scanner.sweep()
+
+                # Update status
+                now_str = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
+                total = detection_log.count()
+
+                if app:
+                    app.config["SCANNER_ACTIVE"] = False
+                    app.config["LAST_SWEEP_TIME"] = now_str
+                    app.config["TOTAL_DETECTIONS"] = total
+                    app.config["SWEEP_COUNT"] = sweep_count
+
+                # Broadcast new detections to web clients
+                if broadcaster and result.signals:
+                    recent = detection_log.query(limit=len(result.signals))
+                    broadcaster.broadcast_detections(recent)
+                    broadcaster.broadcast_status({
+                        "scanning": False,
+                        "sweep_count": sweep_count,
+                        "total_detections": total,
+                        "last_sweep_time": now_str,
+                    })
+
+                # Console summary
+                logger.info(
+                    "Sweep #%d complete: %d signal(s) in %.1fs",
+                    sweep_count, len(result.signals), result.duration_seconds,
+                )
+
+                if single:
+                    break
+
+    except Exception as e:
+        logger.error("Scan loop error: %s", e, exc_info=True)
+    finally:
+        logger.info("Scan loop stopped after %d sweep(s)", sweep_count)
 
 
 def main() -> None:
@@ -99,6 +135,10 @@ def main() -> None:
     parser.add_argument(
         "--stop", type=float, default=None,
         help="Override stop frequency in Hz (default: from config)",
+    )
+    parser.add_argument(
+        "--no-web", action="store_true",
+        help="Disable the web server (CLI-only mode)",
     )
     parser.add_argument(
         "--export", type=str, default=None,
@@ -122,6 +162,7 @@ def main() -> None:
     sdr_config = config["sdr"]
     scan_config = config["scan"].copy()
     detection_config = config["detection"]
+    web_config = config.get("web", {})
 
     if args.start:
         scan_config["freq_start"] = args.start
@@ -129,7 +170,7 @@ def main() -> None:
         scan_config["freq_stop"] = args.stop
 
     print("\n" + "=" * 60)
-    print("  SKAÐI — RF Signal Identification Tool v1.0")
+    print("  SKADI — RF Signal Identification Tool v1.0")
     print("=" * 60)
     print(f"  Scan range: {scan_config['freq_start'] / 1e6:.0f} - {scan_config['freq_stop'] / 1e6:.0f} MHz")
     print(f"  Step size:  {scan_config['step_size'] / 1e6:.1f} MHz")
@@ -159,52 +200,84 @@ def main() -> None:
     # Threat mapper
     threat_mapper = ThreatMapper(PROJECT_ROOT / "config" / "threat_levels.yaml")
     print(f"  Threats:    {len(threat_mapper._rules)} rules (default: {threat_mapper.default_level})")
+
+    # Web server
+    app = None
+    broadcaster = None
+    if not args.no_web:
+        host = web_config.get("host", "127.0.0.1")
+        port = int(web_config.get("port", 8050))
+        print(f"  Web GUI:    http://{host}:{port}")
+
     print("=" * 60 + "\n")
 
-    # Set up graceful shutdown
-    signal.signal(signal.SIGINT, _signal_handler)
+    scan_kwargs = dict(
+        sdr_config=sdr_config,
+        scan_config=scan_config,
+        detection_config=detection_config,
+        config=config,
+        exclusion_filter=exclusion_filter,
+        detection_log=detection_log,
+        fingerprint_extractor=fingerprint_extractor,
+        signal_classifier=signal_classifier,
+        threat_mapper=threat_mapper,
+        single=args.single,
+    )
 
-    sweep_count = 0
-
-    try:
-        with SDRInterface(sdr_config) as sdr:
-            scanner = SpectrumScanner(
-                sdr, scan_config, sdr_config, detection_config,
-                exclusion_filter=exclusion_filter,
-                detection_log=detection_log,
-                fingerprint_extractor=fingerprint_extractor,
-                signal_classifier=signal_classifier,
-                threat_mapper=threat_mapper,
-            )
-
-            while not _shutdown_requested:
-                sweep_count += 1
-                print(f"\n--- Sweep #{sweep_count} ---")
-
-                def progress(step, idx, total):
-                    print(
-                        f"  [{idx + 1}/{total}] {step.centre_freq_hz / 1e6:.1f} MHz "
-                        f"(noise: {step.noise_floor_dbm:.1f} dBm)",
-                        flush=True,
-                    )
-
-                result = scanner.sweep(callback=progress)
-                _print_sweep_summary(result, detection_log)
-
-                if args.single:
-                    break
-
-    except KeyboardInterrupt:
-        pass
-    finally:
+    if args.no_web:
+        # CLI-only mode — run scan loop directly
+        import signal as sig_mod
+        sig_mod.signal(sig_mod.SIGINT, lambda s, f: globals().update(_shutdown_requested=True))
+        _run_scan_loop(**scan_kwargs)
         detection_log.close()
-        print(f"\nSkaði shutdown. {sweep_count} sweep(s) completed.")
+    else:
+        # Web server mode — Flask-SocketIO in main thread, scan in background
+        from src.web.server import create_app, socketio
+        from src.web.websocket import AlertBroadcaster
 
-        # Export if requested
-        if args.export:
-            export_path = Path(args.export)
-            count = export_json(log_path, export_path)
-            print(f"Exported {count} detection(s) to {export_path}")
+        host = web_config.get("host", "127.0.0.1")
+        port = int(web_config.get("port", 8050))
+
+        app = create_app(log_path, web_config)
+        broadcaster = AlertBroadcaster(socketio)
+
+        scan_kwargs["app"] = app
+        scan_kwargs["broadcaster"] = broadcaster
+
+        # Start scan loop in background thread
+        scan_thread = threading.Thread(
+            target=_run_scan_loop,
+            kwargs=scan_kwargs,
+            daemon=True,
+            name="scan-loop",
+        )
+        scan_thread.start()
+
+        # Run Flask-SocketIO in main thread (handles Ctrl+C)
+        try:
+            socketio.run(
+                app,
+                host=host,
+                port=port,
+                debug=False,
+                use_reloader=False,
+                log_output=False,
+            )
+        except KeyboardInterrupt:
+            pass
+        finally:
+            global _shutdown_requested
+            _shutdown_requested = True
+            scan_thread.join(timeout=5)
+            detection_log.close()
+
+    print(f"\nSkaði shutdown complete.")
+
+    # Export if requested
+    if args.export:
+        export_path = Path(args.export)
+        count = export_json(log_path, export_path)
+        print(f"Exported {count} detection(s) to {export_path}")
 
 
 if __name__ == "__main__":

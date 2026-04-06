@@ -185,6 +185,7 @@ class DetectionLog:
         since: str | None = None,
         freq_min_hz: float | None = None,
         freq_max_hz: float | None = None,
+        threat_level: str | None = None,
         limit: int = 100,
     ) -> list[dict[str, Any]]:
         """Query detection events with optional filters.
@@ -193,6 +194,7 @@ class DetectionLog:
             since: ISO 8601 timestamp — only return events after this time.
             freq_min_hz: Minimum frequency filter in Hz.
             freq_max_hz: Maximum frequency filter in Hz.
+            threat_level: Filter by threat level (e.g. "HIGH").
             limit: Maximum number of results to return.
 
         Returns:
@@ -211,6 +213,9 @@ class DetectionLog:
         if freq_max_hz is not None:
             conditions.append("frequency_hz <= ?")
             params.append(freq_max_hz)
+        if threat_level is not None:
+            conditions.append("threat_level = ?")
+            params.append(threat_level)
 
         where_clause = ""
         if conditions:
