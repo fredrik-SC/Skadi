@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -67,6 +68,7 @@ class DetectionLog:
 
     def __init__(self, db_path: Path) -> None:
         self._db_path = db_path
+        self._lock = threading.Lock()
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
@@ -75,11 +77,12 @@ class DetectionLog:
 
     def _ensure_schema(self) -> None:
         """Create the detections table and indexes if they don't exist."""
-        cursor = self._conn.cursor()
-        cursor.execute(_CREATE_TABLE_SQL)
-        for index_sql in _CREATE_INDEXES_SQL:
-            cursor.execute(index_sql)
-        self._conn.commit()
+        with self._lock:
+            cursor = self._conn.cursor()
+            cursor.execute(_CREATE_TABLE_SQL)
+            for index_sql in _CREATE_INDEXES_SQL:
+                cursor.execute(index_sql)
+            self._conn.commit()
 
     def log_signal(
         self,
@@ -119,26 +122,27 @@ class DetectionLog:
             signal.timestamp, tz=timezone.utc
         ).isoformat()
 
-        cursor = self._conn.cursor()
-        cursor.execute(_INSERT_SQL, (
-            timestamp_utc,
-            signal.centre_freq_hz,
-            signal.bandwidth_hz,
-            modulation,
-            signal.peak_power_dbm,
-            signal_type,
-            confidence_score,
-            alt_match_1,
-            alt_match_1_confidence,
-            alt_match_2,
-            alt_match_2_confidence,
-            known_users,
-            threat_level,
-            acf_value,
-            notes,
-        ))
-        self._conn.commit()
-        return cursor.lastrowid
+        with self._lock:
+            cursor = self._conn.cursor()
+            cursor.execute(_INSERT_SQL, (
+                timestamp_utc,
+                signal.centre_freq_hz,
+                signal.bandwidth_hz,
+                modulation,
+                signal.peak_power_dbm,
+                signal_type,
+                confidence_score,
+                alt_match_1,
+                alt_match_1_confidence,
+                alt_match_2,
+                alt_match_2_confidence,
+                known_users,
+                threat_level,
+                acf_value,
+                notes,
+            ))
+            self._conn.commit()
+            return cursor.lastrowid
 
     def log_signals(self, signals: list[DetectedSignal]) -> list[int]:
         """Insert multiple detection events in a single transaction.
@@ -150,33 +154,34 @@ class DetectionLog:
             List of row IDs for the inserted detections.
         """
         row_ids = []
-        cursor = self._conn.cursor()
+        with self._lock:
+            cursor = self._conn.cursor()
 
-        for signal in signals:
-            timestamp_utc = datetime.fromtimestamp(
-                signal.timestamp, tz=timezone.utc
-            ).isoformat()
+            for signal in signals:
+                timestamp_utc = datetime.fromtimestamp(
+                    signal.timestamp, tz=timezone.utc
+                ).isoformat()
 
-            cursor.execute(_INSERT_SQL, (
-                timestamp_utc,
-                signal.centre_freq_hz,
-                signal.bandwidth_hz,
-                None,  # modulation
-                signal.peak_power_dbm,
-                None,  # signal_type
-                None,  # confidence_score
-                None,  # alt_match_1
-                None,  # alt_match_1_confidence
-                None,  # alt_match_2
-                None,  # alt_match_2_confidence
-                None,  # known_users
-                None,  # threat_level
-                None,  # acf_value
-                None,  # notes
-            ))
-            row_ids.append(cursor.lastrowid)
+                cursor.execute(_INSERT_SQL, (
+                    timestamp_utc,
+                    signal.centre_freq_hz,
+                    signal.bandwidth_hz,
+                    None,  # modulation
+                    signal.peak_power_dbm,
+                    None,  # signal_type
+                    None,  # confidence_score
+                    None,  # alt_match_1
+                    None,  # alt_match_1_confidence
+                    None,  # alt_match_2
+                    None,  # alt_match_2_confidence
+                    None,  # known_users
+                    None,  # threat_level
+                    None,  # acf_value
+                    None,  # notes
+                ))
+                row_ids.append(cursor.lastrowid)
 
-        self._conn.commit()
+            self._conn.commit()
         logger.info("Logged %d detection(s) to database", len(row_ids))
         return row_ids
 
@@ -229,15 +234,17 @@ class DetectionLog:
         """
         params.append(limit)
 
-        cursor = self._conn.cursor()
-        cursor.execute(sql, params)
-        return [dict(row) for row in cursor.fetchall()]
+        with self._lock:
+            cursor = self._conn.cursor()
+            cursor.execute(sql, params)
+            return [dict(row) for row in cursor.fetchall()]
 
     def count(self) -> int:
         """Return total number of detection events."""
-        cursor = self._conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM detections")
-        return cursor.fetchone()[0]
+        with self._lock:
+            cursor = self._conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM detections")
+            return cursor.fetchone()[0]
 
     def close(self) -> None:
         """Close the database connection."""
