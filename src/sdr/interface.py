@@ -160,6 +160,11 @@ class SDRInterface:
             logger.info("SDR stream closed")
 
         if self._device is not None:
+            try:
+                # Explicitly unmake before GC to avoid destructor crash
+                SoapySDR.Device.unmake(self._device)
+            except Exception:
+                pass
             self._device = None
             logger.info("SDR device disconnected")
 
