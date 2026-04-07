@@ -38,3 +38,7 @@ data/iq_samples/
 
 # Claude
 .claude/
+
+# Artemis application (not the DB)
+artemis/
+data/detections_export.json
