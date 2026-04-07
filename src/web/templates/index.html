@@ -25,9 +25,9 @@
     <div id="scan-controls">
         <div class="control-group">
             <label>Start (MHz):</label>
-            <input type="number" id="scan-start" value="88" step="1" min="1" max="3000">
+            <input type="number" id="scan-start" value="30" step="1" min="1" max="3000">
             <label>Stop (MHz):</label>
-            <input type="number" id="scan-stop" value="108" step="1" min="1" max="3000">
+            <input type="number" id="scan-stop" value="174" step="1" min="1" max="3000">
             <button id="btn-start-scan" class="btn-scan">Start Scan</button>
             <button id="btn-stop-scan" class="btn-stop" disabled>Stop Scan</button>
         </div>
@@ -36,17 +36,17 @@
 
     <!-- Main Content -->
     <main>
-        <!-- Real-Time Alert Feed -->
+        <!-- Threat Alerts — HIGH and CRITICAL only -->
         <section id="alert-section">
-            <h2>Live Alerts</h2>
+            <h2>Threat Alerts <span class="alert-subtitle">(HIGH / CRITICAL only)</span></h2>
             <div id="alert-feed">
-                <div class="empty-state">Waiting for detections...</div>
+                <div class="empty-state">No high-priority threats detected</div>
             </div>
         </section>
 
-        <!-- Detection History -->
+        <!-- Detection History — all signals -->
         <section id="history-section">
-            <h2>Detection History</h2>
+            <h2>All Detections</h2>
             <div class="filters">
                 <select id="filter-threat">
                     <option value="">All Threat Levels</option>
@@ -59,7 +59,6 @@
                 <input type="number" id="filter-freq-min" placeholder="Min freq (MHz)" step="0.1">
                 <input type="number" id="filter-freq-max" placeholder="Max freq (MHz)" step="0.1">
                 <button id="btn-filter">Filter</button>
-                <button id="btn-refresh">Refresh</button>
             </div>
             <div class="table-container">
                 <table id="history-table">
@@ -82,7 +81,17 @@
         </section>
     </main>
 
+    <!-- Detail Panel (slide-in) -->
+    <div id="detail-panel" class="detail-panel" style="display:none">
+        <div class="detail-header">
+            <h3 id="detail-title">Signal Details</h3>
+            <button id="detail-close" class="detail-close-btn">X</button>
+        </div>
+        <div id="detail-content" class="detail-content">
+        </div>
+    </div>
+
     <script src="/static/js/socket.io.min.js"></script>
-    <script src="/static/js/skadi.js?v=4"></script>
+    <script src="/static/js/skadi.js?v=5"></script>
 </body>
 </html>

@@ -319,6 +319,99 @@ h2 {
 .threat-badge.LOW { background: var(--threat-low); }
 .threat-badge.INFORMATIONAL { background: var(--threat-info); }
 
+.alert-subtitle {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    font-weight: normal;
+    text-transform: none;
+}
+
+/* Clickable rows */
+#history-table tbody tr { cursor: pointer; }
+#history-table tbody tr.selected {
+    background: rgba(0, 212, 170, 0.15);
+    outline: 1px solid var(--accent);
+}
+
+/* Detail Panel */
+.detail-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: 400px;
+    height: 100vh;
+    background: var(--bg-secondary);
+    border-left: 2px solid var(--accent);
+    z-index: 1000;
+    overflow-y: auto;
+    box-shadow: -4px 0 20px rgba(0, 0, 0, 0.4);
+    animation: slideRight 0.2s ease-out;
+}
+
+@keyframes slideRight {
+    from { transform: translateX(100%); }
+    to { transform: translateX(0); }
+}
+
+.detail-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+}
+
+.detail-header h3 {
+    color: var(--accent);
+    font-size: 1rem;
+    margin: 0;
+}
+
+.detail-close-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85rem;
+}
+
+.detail-close-btn:hover { color: white; border-color: var(--accent); }
+
+.detail-content {
+    padding: 16px 20px;
+}
+
+.detail-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.85rem;
+}
+
+.detail-label {
+    color: var(--text-secondary);
+    min-width: 120px;
+}
+
+.detail-value {
+    color: var(--text-primary);
+    text-align: right;
+    word-break: break-word;
+    max-width: 240px;
+}
+
+.detail-section-title {
+    color: var(--accent);
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    padding: 12px 0 6px;
+    margin-top: 8px;
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: var(--bg-primary); }

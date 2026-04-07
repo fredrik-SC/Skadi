@@ -124,6 +124,99 @@ def _register_routes(app: Flask) -> None:
         app.config["SCAN_REQUESTED"] = False
         return jsonify({"status": "stop_requested"})
 
+    @app.route("/api/config/detection", methods=["GET", "POST"])
+    def api_config_detection():
+        """Get or update detection thresholds."""
+        from src.config import PROJECT_ROOT, load_config
+        config_path = PROJECT_ROOT / "config" / "default.yaml"
+
+        if request.method == "GET":
+            cfg = load_config(config_path)
+            return jsonify(cfg.get("detection", {}))
+
+        data = request.get_json(silent=True) or {}
+        cfg = load_config(config_path)
+        detection = cfg.get("detection", {})
+        if "threshold_db" in data:
+            detection["threshold_db"] = float(data["threshold_db"])
+        if "min_bandwidth_hz" in data:
+            detection["min_bandwidth_hz"] = float(data["min_bandwidth_hz"])
+        cfg["detection"] = detection
+
+        import yaml
+        with config_path.open("w", encoding="utf-8") as f:
+            yaml.dump(cfg, f, default_flow_style=False, sort_keys=False)
+        return jsonify({"status": "updated", "detection": detection})
+
+    @app.route("/api/config/exclusions", methods=["GET", "POST", "DELETE"])
+    def api_config_exclusions():
+        """Manage exclusion list."""
+        from src.config import PROJECT_ROOT
+        excl_path = PROJECT_ROOT / "config" / "exclusions.yaml"
+
+        import yaml
+        if request.method == "GET":
+            with excl_path.open("r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+            return jsonify(data.get("exclusions") or [])
+
+        if request.method == "POST":
+            entry = request.get_json(silent=True) or {}
+            with excl_path.open("r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+            exclusions = data.get("exclusions") or []
+            if not isinstance(exclusions, list):
+                exclusions = []
+            exclusions.append(entry)
+            data["exclusions"] = exclusions
+            with excl_path.open("w", encoding="utf-8") as f:
+                yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+            return jsonify({"status": "added", "count": len(exclusions)})
+
+        if request.method == "DELETE":
+            idx = request.args.get("index")
+            with excl_path.open("r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+            exclusions = data.get("exclusions") or []
+            if idx is not None and 0 <= int(idx) < len(exclusions):
+                exclusions.pop(int(idx))
+            data["exclusions"] = exclusions
+            with excl_path.open("w", encoding="utf-8") as f:
+                yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+            return jsonify({"status": "deleted", "count": len(exclusions)})
+
+    @app.route("/api/config/threats", methods=["GET", "POST"])
+    def api_config_threats():
+        """Get or update threat rules."""
+        from src.config import PROJECT_ROOT
+        threat_path = PROJECT_ROOT / "config" / "threat_levels.yaml"
+
+        import yaml
+        if request.method == "GET":
+            with threat_path.open("r", encoding="utf-8") as f:
+                data = yaml.safe_load(f) or {}
+            return jsonify(data)
+
+        data = request.get_json(silent=True) or {}
+        with threat_path.open("w", encoding="utf-8") as f:
+            yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+        return jsonify({"status": "updated"})
+
+    @app.route("/api/detection/<int:detection_id>")
+    def api_detection_detail(detection_id):
+        """Get full details for a single detection."""
+        log_path = Path(app.config["DETECTION_LOG_PATH"])
+        import sqlite3
+        conn = sqlite3.connect(str(log_path))
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT * FROM detections WHERE id = ?", (detection_id,)
+        ).fetchone()
+        conn.close()
+        if row is None:
+            return jsonify({"error": "not found"}), 404
+        return jsonify(dict(row))
+
 
 def _float_or_none(value: str | None) -> float | None:
     """Convert a string to float, returning None if invalid."""
