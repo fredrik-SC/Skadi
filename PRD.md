@@ -281,14 +281,18 @@ The threat lookup table shall be stored as an editable YAML or JSON file, allowi
 
 These are documented for architectural consideration but are not part of the initial build:
 
-1. **Direction finding (DF)** -- Using two SDR receivers and two antennas to triangulate signal bearing. The RSPduo's dual-tuner mode or a second SDR device could support this.
+1. **Direction finding (DF)** -- Using two SDR receivers and two antennas to triangulate signal bearing. The RSPduo's dual-tuner mode or a second SDR device could support this. **Hardware required: second SDRPlay RSPduo.**
 2. **GPS integration** -- USB GPS receiver for automatic position logging in lat/lon and MGRS format.
 3. **Map display** -- Local area map in the GUI showing estimated transmitter locations with hexagonal markers, calculated from bearing and signal strength.
-4. **Raspberry Pi deployment** -- Compact, portable package with touchscreen display for field use. Compute resource requirements for real-time IQ analysis on Pi hardware need evaluation.
+4. **Raspberry Pi deployment** -- Compact, portable package with touchscreen display for field use. **Hardware required: Raspberry Pi with 16GB RAM.** Compute resource requirements for real-time IQ analysis on Pi hardware need evaluation.
 5. **Waterfall display** -- Real-time spectral waterfall in the browser GUI, with zoom capability.
 6. **Dual-tuner operation** -- One tuner scanning/classifying, one tuner providing waterfall view of a 10MHz slice (noting the 2MHz-per-tuner limitation in dual mode).
-7. **SEIARA integration** -- Polling-based data pipeline from Skaði's detection log.
+7. **SEIARA integration** -- Polling-based data pipeline from Skaði's detection log. The example polling script exists; the SEIARA-side consumer needs to be built.
 8. **ML-based classification** -- Neural network or ML model trained on Artemis audio samples and waterfall patterns for improved matching beyond parametric comparison.
+9. **Improve classification accuracy** -- The v1.0 parametric classifier achieves ~60% accuracy on real-world narrowband signals. Improvements needed: better feature extraction for FSK/PSK discrimination, training feedback loop where operators can correct misclassifications, and potentially ML-based approaches using collected IQ samples.
+10. **Native SDRPlay API** -- Bypass SoapySDR and use the SDRPlay API 3.x directly to eliminate the SoapySDRPlay3 C++ plugin shutdown crashes and improve hardware stability during sustained operation.
+11. **Extended field testing** -- Run the system for hours/days in a real operational environment, collect operator feedback, and identify detection gaps against real military signals. This should drive classification tuning priorities.
+12. **Operator feedback loop** -- Allow operators to correct signal classifications via the web GUI (e.g., "this is actually X, not Y"). Store corrections and use them to tune classifier thresholds or train ML models.
 
 ---
 
