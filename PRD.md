@@ -303,3 +303,4 @@ This project follows Specification Driven Development. This PRD and the accompan
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 6 April 2026 | Fredrik | Initial draft |
+| 1.0.1 | 7 April 2026 | Fredrik / Claude | v1.0 implementation complete. All 10 sessions delivered: SDR interface, spectrum scanner, adaptive detection with hierarchical subcomponent merge, fingerprint extraction (modulation/bandwidth/ACF), Artemis DB classification (432 signals), threat assessment, SQLite detection log, browser dashboard with real-time WebSocket alerts, scan presets (HF/VHF/UHF/airband/military_hf), SEIARA polling integration, documentation. 143 tests passing. Known limitations: SoapySDRPlay3 shutdown crash, ~60% classification accuracy on narrowband signals, Python 3.14 required. |

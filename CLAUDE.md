@@ -6,10 +6,23 @@ Skaði is a standalone, offline RF signal identification tool. It scans the radi
 
 This is a proof-of-concept/bench test that must be architected for future integration with SEIARA (an intelligence platform with React frontend, Python/Docker backend, Neo4j, Qdrant, and AI capabilities). Integration will be via SEIARA polling Skaði's SQLite detection log.
 
+## Project Status: v1.0 Milestone (7 April 2026)
+
+All 10 planned development sessions are complete. The system is operational as a bench test. See docs/OPERATIONS.md for usage and docs/SEIARA_INTEGRATION.md for the polling interface.
+
+**Known v1.0 limitations:**
+- SoapySDRPlay3 C++ plugin crashes on shutdown (cosmetic — data is saved)
+- Classification accuracy ~60% for real-world narrowband signals
+- Python 3.14 required (SoapySDR homebrew bindings not available for 3.13)
+- Linux deployment untested (Dockerfile exists but not verified)
+
 ## Key Documents
 
 - **PRD.md** -- Full product requirements with numbered requirements (FR-*, NFR-*)
 - **PLANNING.md** -- Implementation phases, tech stack, directory structure, risk register
+- **docs/OPERATIONS.md** -- How to install and run Skaði
+- **docs/SEIARA_INTEGRATION.md** -- Detection log schema, polling pattern, REST API
+- **docs/CONFIGURATION.md** -- All tuneable parameters
 
 Always consult these documents before starting work. Requirements are the source of truth.
 
