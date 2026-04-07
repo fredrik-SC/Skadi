@@ -35,12 +35,13 @@ class SDRInterface:
     """SoapySDR interface for SDRPlay RSPduo in single-tuner mode.
 
     Manages device connection, configuration, stream setup, and IQ capture.
+    The stream is set up once at connect() and torn down at disconnect()
+    to avoid repeated setup/teardown which corrupts the SDRPlay driver.
+
     Supports the context manager protocol for safe resource cleanup.
 
     Args:
         sdr_config: Dictionary of SDR configuration values from default.yaml.
-            Expected keys: driver, mode, sample_rate, bandwidth, agc,
-            gain_reduction.
 
     Example:
         config = load_config()
@@ -58,6 +59,7 @@ class SDRInterface:
         self._gain_reduction: float = float(sdr_config.get("gain_reduction", 0))
 
         self._device: Any | None = None
+        self._stream: Any | None = None
 
     @property
     def connected(self) -> bool:
@@ -70,10 +72,7 @@ class SDRInterface:
         return self._sample_rate
 
     def connect(self) -> None:
-        """Open and configure the SDR device.
-
-        Connects to the SDR via SoapySDR, sets sample rate, gain mode,
-        and antenna selection.
+        """Open and configure the SDR device and set up the receive stream.
 
         Raises:
             SDRConnectionError: If the device cannot be opened or configured.
@@ -82,7 +81,6 @@ class SDRInterface:
             logger.warning("Device already connected, disconnecting first")
             self.disconnect()
 
-        # Build the device argument string
         device_args = f"driver={self._driver},mode={self._mode}"
         logger.info("Opening SDR device: %s", device_args)
 
@@ -96,10 +94,18 @@ class SDRInterface:
         try:
             self._configure_device()
         except Exception as e:
-            # Clean up on configuration failure
             self._device = None
             raise SDRConnectionError(
                 f"Failed to configure SDR device: {e}"
+            ) from e
+
+        # Set up the receive stream once (not per-capture)
+        try:
+            self._stream = self._device.setupStream(_RX, _CF32)
+        except RuntimeError as e:
+            self._device = None
+            raise SDRConnectionError(
+                f"Failed to set up receive stream: {e}"
             ) from e
 
         hw_info = dict(self._device.getHardwareInfo())
@@ -114,7 +120,6 @@ class SDRInterface:
         """Apply sample rate, gain, and antenna settings to the device."""
         dev = self._device
 
-        # Sample rate
         dev.setSampleRate(_RX, 0, self._sample_rate)
         actual_rate = dev.getSampleRate(_RX, 0)
         logger.info(
@@ -122,12 +127,10 @@ class SDRInterface:
             self._sample_rate, actual_rate,
         )
 
-        # Bandwidth (0 = auto)
         if self._bandwidth > 0:
             dev.setBandwidth(_RX, 0, self._bandwidth)
             logger.info("Bandwidth set to %.0f Hz", self._bandwidth)
 
-        # Gain / AGC
         if self._agc:
             dev.setGainMode(_RX, 0, True)
             logger.info("AGC enabled")
@@ -136,18 +139,29 @@ class SDRInterface:
             dev.setGain(_RX, 0, "IFGR", self._gain_reduction)
             logger.info("Manual gain: IFGR=%.0f dB", self._gain_reduction)
 
-        # Antenna — default to Tuner 1 50 ohm for single-tuner mode
         dev.setAntenna(_RX, 0, "Tuner 1 50 ohm")
         logger.info("Antenna: Tuner 1 50 ohm")
 
     def disconnect(self) -> None:
-        """Close the SDR device and release resources.
+        """Close the SDR stream and device.
 
         Safe to call multiple times (idempotent).
         """
+        if self._stream is not None and self._device is not None:
+            try:
+                self._device.deactivateStream(self._stream)
+            except Exception:
+                pass
+            try:
+                self._device.closeStream(self._stream)
+            except Exception:
+                pass
+            self._stream = None
+            logger.info("SDR stream closed")
+
         if self._device is not None:
-            logger.info("Disconnecting SDR device")
             self._device = None
+            logger.info("SDR device disconnected")
 
     def tune(self, frequency_hz: float) -> float:
         """Set the centre frequency of the receiver.
@@ -156,7 +170,7 @@ class SDRInterface:
             frequency_hz: Target centre frequency in Hz.
 
         Returns:
-            The actual tuned frequency in Hz (may differ slightly from requested).
+            The actual tuned frequency in Hz.
 
         Raises:
             SDRConnectionError: If the device is not connected.
@@ -164,7 +178,6 @@ class SDRInterface:
         if self._device is None:
             raise SDRConnectionError("Device not connected")
 
-        # Validate frequency is within hardware range
         try:
             freq_ranges = self._device.getFrequencyRange(_RX, 0)
             in_range = any(
@@ -177,7 +190,7 @@ class SDRInterface:
                     frequency_hz / 1e6,
                 )
         except Exception:
-            pass  # Don't fail on range check errors
+            pass
 
         self._device.setFrequency(_RX, 0, frequency_hz)
         actual_freq = self._device.getFrequency(_RX, 0)
@@ -190,8 +203,9 @@ class SDRInterface:
     def capture(self, num_samples: int) -> np.ndarray:
         """Capture IQ samples from the SDR.
 
-        Sets up a receive stream, reads the requested number of samples
-        in chunks, then tears down the stream.
+        Activates the persistent stream, reads the requested number of
+        samples, then deactivates. The stream itself is kept open
+        (created at connect, destroyed at disconnect).
 
         Args:
             num_samples: Number of complex samples to capture.
@@ -203,16 +217,10 @@ class SDRInterface:
             SDRConnectionError: If the device is not connected.
             SDRStreamError: If the stream read fails.
         """
-        if self._device is None:
-            raise SDRConnectionError("Device not connected")
+        if self._device is None or self._stream is None:
+            raise SDRConnectionError("Device not connected or stream not set up")
 
-        # Set up the receive stream
-        try:
-            stream = self._device.setupStream(_RX, _CF32)
-        except RuntimeError as e:
-            raise SDRStreamError(f"Failed to set up stream: {e}") from e
-
-        self._device.activateStream(stream)
+        self._device.activateStream(self._stream)
 
         buffer = np.zeros(num_samples, dtype=np.complex64)
         samples_read = 0
@@ -224,7 +232,7 @@ class SDRInterface:
                 chunk = np.zeros(chunk_size, dtype=np.complex64)
 
                 result = self._device.readStream(
-                    stream, [chunk], chunk_size,
+                    self._stream, [chunk], chunk_size,
                     timeoutUs=1_000_000,
                 )
 
@@ -239,18 +247,13 @@ class SDRInterface:
                 buffer[samples_read:samples_read + result.ret] = chunk[:result.ret]
                 samples_read += result.ret
         finally:
-            self._device.deactivateStream(stream)
-            self._device.closeStream(stream)
+            self._device.deactivateStream(self._stream)
 
         logger.info("Captured %d IQ samples", samples_read)
         return buffer
 
     def info(self) -> dict[str, Any]:
         """Return diagnostic information about the connected device.
-
-        Returns:
-            Dictionary with device hardware info, supported antennas,
-            gain ranges, sample rate ranges, and frequency ranges.
 
         Raises:
             SDRConnectionError: If the device is not connected.

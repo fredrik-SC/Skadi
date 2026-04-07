@@ -184,9 +184,9 @@ class TestSDRInterface:
         with pytest.raises(SDRStreamError, match="error code"):
             sdr.capture(1024)
 
-        # Stream should still be cleaned up (deactivate + close called)
-        mock_device.deactivateStream.assert_called_once()
-        mock_device.closeStream.assert_called_once()
+        # Stream deactivated on error, but NOT closed (persistent stream)
+        mock_device.deactivateStream.assert_called()
+        # closeStream happens at disconnect, not per-capture
         sdr.disconnect()
 
     def test_capture_not_connected(self, sdr_config):
