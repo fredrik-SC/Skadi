@@ -115,19 +115,15 @@ class SignalDetector:
     def _merge_subcomponents(
         signals: list[DetectedSignal],
     ) -> list[DetectedSignal]:
-        """Merge narrowband signals that fall within a wider parent signal.
+        """Remove narrowband subcomponents when wideband parents exist.
 
-        If a wideband signal (e.g. FM broadcast at 200 kHz) is detected
-        alongside narrowband signals (e.g. RDS at 2 kHz) whose centre
-        frequency falls within the parent's bandwidth, the narrowband
-        signals are absorbed into the parent. This prevents FM subcarriers,
-        stereo pilots, and other signal components from being reported as
-        independent detections.
-
-        A narrowband signal is only absorbed if:
-        - Its centre frequency is within the parent's band (freq +/- bw/2)
-        - Its bandwidth is less than 1/4 of the parent's bandwidth
-        - The parent is at least 10 kHz wide (don't merge into very narrow signals)
+        Uses two strategies:
+        1. Proximity merge: narrowband signals within a parent's frequency
+           footprint are absorbed (RDS subcarriers, stereo pilots, etc.)
+        2. Step-level filter: if ANY wideband signal (>20 kHz) exists in
+           this step, remove all very narrowband signals (<5 kHz) that are
+           weaker than the strongest wideband signal. These are almost
+           always subcomponents, noise peaks, or spectral artefacts.
 
         Args:
             signals: List of detected signals from a single scan step.
@@ -138,44 +134,45 @@ class SignalDetector:
         if len(signals) < 2:
             return signals
 
-        # Sort by bandwidth descending — widest signals are potential parents
-        by_bw = sorted(signals, key=lambda s: s.bandwidth_hz, reverse=True)
+        # Find wideband parents (>20 kHz)
+        parents = [s for s in signals if s.bandwidth_hz >= 20_000]
 
-        absorbed: set[int] = set()  # Indices into the original signals list
+        if not parents:
+            return signals
 
-        for i, parent in enumerate(by_bw):
-            if parent.bandwidth_hz < 10_000:
-                break  # No more wide-enough parents
+        absorbed: set[int] = set()
+        strongest_parent_power = max(p.peak_power_dbm for p in parents)
 
-            # Use an absorption zone wider than the measured bandwidth.
-            # FM broadcast occupies 200 kHz even if we measure 50 kHz.
-            # Use 2x measured bandwidth or 150 kHz, whichever is larger.
-            absorption_radius = max(parent.bandwidth_hz, 150_000) / 2
+        for parent in parents:
+            # Absorption zone: 100 kHz each side of parent centre
+            # (FM stations occupy 200 kHz even if measured narrower)
+            absorption_radius = max(parent.bandwidth_hz * 1.5, 200_000) / 2
             parent_lower = parent.centre_freq_hz - absorption_radius
             parent_upper = parent.centre_freq_hz + absorption_radius
 
-            for j, child in enumerate(by_bw):
-                if i == j or id(child) in absorbed:
+            for child in signals:
+                if id(child) in absorbed or child.bandwidth_hz >= 20_000:
                     continue
 
-                # Child must be significantly narrower than parent
-                if child.bandwidth_hz >= parent.bandwidth_hz / 4:
-                    continue
-
-                # Child's centre must fall within parent's band
+                # Proximity merge: narrow signal within parent's footprint
                 if parent_lower <= child.centre_freq_hz <= parent_upper:
                     absorbed.add(id(child))
-                    logger.debug(
-                        "Merged subcomponent %.3f MHz (%.1f kHz) into parent %.3f MHz (%.1f kHz)",
-                        child.centre_freq_hz / 1e6, child.bandwidth_hz / 1e3,
-                        parent.centre_freq_hz / 1e6, parent.bandwidth_hz / 1e3,
-                    )
+                    continue
+
+        # Step-level filter: if wideband signals exist, remove very narrow
+        # signals (<5 kHz) that are weaker than the strongest parent.
+        # These are almost never independent transmissions in VHF/UHF.
+        for s in signals:
+            if id(s) in absorbed:
+                continue
+            if s.bandwidth_hz < 5_000 and s.peak_power_dbm < strongest_parent_power:
+                absorbed.add(id(s))
 
         result = [s for s in signals if id(s) not in absorbed]
 
         if absorbed:
             logger.debug(
-                "Merged %d subcomponent(s) into parent signals (%d -> %d)",
+                "Filtered %d subcomponent(s) (%d -> %d signals)",
                 len(absorbed), len(signals), len(result),
             )
 
