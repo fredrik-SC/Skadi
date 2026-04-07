@@ -68,7 +68,7 @@ class DetectionLog:
     def __init__(self, db_path: Path) -> None:
         self._db_path = db_path
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(db_path))
+        self._conn = sqlite3.connect(str(db_path), check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._ensure_schema()
         logger.info("Detection log opened at %s", db_path)

@@ -280,6 +280,37 @@ class SpectrumScanner:
                             fp.signal.centre_freq_hz / 1e6, e,
                         )
 
+            # Log detections immediately (per-step, not end-of-sweep)
+            if self._detection_log is not None and signals:
+                for sig_idx, signal in enumerate(signals):
+                    fp = step_fps[sig_idx] if sig_idx < len(step_fps) else None
+                    cr = classification_results.get(id(fp)) if fp else None
+                    matches = cr.matches if cr else []
+
+                    threat_level = None
+                    if self._threat_mapper is not None:
+                        if matches:
+                            threat_level = self._threat_mapper.assess(
+                                matches[0].signal.name,
+                                matches[0].signal.description,
+                            )
+                        else:
+                            threat_level = self._threat_mapper.default_level
+
+                    self._detection_log.log_signal(
+                        signal,
+                        modulation=fp.modulation.value if fp else None,
+                        signal_type=matches[0].signal.name if matches else None,
+                        confidence_score=matches[0].confidence if matches else None,
+                        alt_match_1=matches[1].signal.name if len(matches) > 1 else None,
+                        alt_match_1_confidence=matches[1].confidence if len(matches) > 1 else None,
+                        alt_match_2=matches[2].signal.name if len(matches) > 2 else None,
+                        alt_match_2_confidence=matches[2].confidence if len(matches) > 2 else None,
+                        known_users=matches[0].signal.description[:200] if matches and matches[0].signal.description else None,
+                        threat_level=threat_level,
+                        acf_value=fp.acf_ms if fp else None,
+                    )
+
             all_signals.extend(signals)
 
             # Free IQ data after fingerprinting to save memory
@@ -301,43 +332,6 @@ class SpectrumScanner:
 
         # Sort all signals by peak power
         all_signals.sort(key=lambda s: s.peak_power_dbm, reverse=True)
-
-        # Log detections to database if configured
-        if self._detection_log is not None and all_signals:
-            # Build lookups for enriched logging
-            fp_by_signal: dict[int, SignalFingerprint] = {}
-            for fp in all_fingerprints:
-                fp_by_signal[id(fp.signal)] = fp
-
-            for signal in all_signals:
-                fp = fp_by_signal.get(id(signal))
-                cr = classification_results.get(id(fp)) if fp else None
-                matches = cr.matches if cr else []
-
-                # Assign threat level
-                threat_level = None
-                if self._threat_mapper is not None:
-                    if matches:
-                        threat_level = self._threat_mapper.assess(
-                            matches[0].signal.name,
-                            matches[0].signal.description,
-                        )
-                    else:
-                        threat_level = self._threat_mapper.default_level
-
-                self._detection_log.log_signal(
-                    signal,
-                    modulation=fp.modulation.value if fp else None,
-                    signal_type=matches[0].signal.name if matches else None,
-                    confidence_score=matches[0].confidence if matches else None,
-                    alt_match_1=matches[1].signal.name if len(matches) > 1 else None,
-                    alt_match_1_confidence=matches[1].confidence if len(matches) > 1 else None,
-                    alt_match_2=matches[2].signal.name if len(matches) > 2 else None,
-                    alt_match_2_confidence=matches[2].confidence if len(matches) > 2 else None,
-                    known_users=matches[0].signal.description[:200] if matches and matches[0].signal.description else None,
-                    threat_level=threat_level,
-                    acf_value=fp.acf_ms if fp else None,
-                )
 
         logger.info(
             "Sweep complete: %d signal(s) detected in %.1f seconds",

@@ -81,9 +81,24 @@ def _run_scan_loop(
                             "sweep_count": sweep_count,
                         })
 
-                result = scanner.sweep()
+                # Callback broadcasts detections per-step for real-time UI
+                def step_callback(step, idx, total_steps):
+                    if app:
+                        app.config["TOTAL_DETECTIONS"] = detection_log.count()
+                    if broadcaster:
+                        # Push latest detections to browsers
+                        recent = detection_log.query(limit=20)
+                        broadcaster.broadcast_detections(recent)
+                        broadcaster.broadcast_status({
+                            "scanning": True,
+                            "sweep_count": sweep_count,
+                            "total_detections": detection_log.count(),
+                            "last_sweep_time": f"Step {idx+1}/{total_steps}",
+                        })
 
-                # Update status
+                result = scanner.sweep(callback=step_callback)
+
+                # Update status after sweep completes
                 now_str = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
                 total = detection_log.count()
 
@@ -93,10 +108,7 @@ def _run_scan_loop(
                     app.config["TOTAL_DETECTIONS"] = total
                     app.config["SWEEP_COUNT"] = sweep_count
 
-                # Broadcast new detections to web clients
-                if broadcaster and result.signals:
-                    recent = detection_log.query(limit=len(result.signals))
-                    broadcaster.broadcast_detections(recent)
+                if broadcaster:
                     broadcaster.broadcast_status({
                         "scanning": False,
                         "sweep_count": sweep_count,
