@@ -212,3 +212,38 @@ class TestSpectrumScanner:
         if result.signals:
             # log_signal called once per signal
             assert mock_log.log_signal.call_count == len(result.signals)
+
+
+class TestDcRemoval:
+    """DC-spike removal in compute_psd (capture-quality fix, default off)."""
+
+    def _scanner(self, capture_config=None):
+        scan_config = {
+            "freq_start": 88e6, "freq_stop": 108e6, "step_size": 2e6,
+            "dwell_time": 0.5, "fft_size": 4096, "fft_averages": 4,
+        }
+        return SpectrumScanner(
+            MagicMock(), scan_config, {"sample_rate": 2_048_000},
+            {"threshold_db": 10.0, "min_bandwidth_hz": 500, "max_signals_per_step": 10},
+            capture_config=capture_config,
+        )
+
+    def test_dc_spike_present_when_off(self):
+        """With dc_removal off, a DC offset produces a large centre spike."""
+        iq = generate_test_iq(tones=[(500e3, 0.3)], num_samples=4096 * 4) + (5 + 5j)
+        scanner = self._scanner()
+        _, psd = scanner.compute_psd(iq)
+        centre = len(psd) // 2
+        assert psd[centre] > np.median(psd) + 10.0
+
+    def test_dc_spike_blanked_when_on(self):
+        """With dc_removal on, the centre bin is blanked to ~noise level."""
+        iq = generate_test_iq(tones=[(500e3, 0.3)], num_samples=4096 * 4) + (5 + 5j)
+        scanner = self._scanner({"dc_removal": True, "dc_blank_bins": 2})
+        _, psd = scanner.compute_psd(iq)
+        centre = len(psd) // 2
+        # Centre and neighbours no longer a prominent peak.
+        assert psd[centre] < np.median(psd) + 3.0
+        # The real tone at +500 kHz is untouched.
+        tone_bin = centre + int(500e3 / (2_048_000 / 4096))
+        assert psd[tone_bin] > np.median(psd) + 10.0

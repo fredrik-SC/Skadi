@@ -135,3 +135,36 @@ class TestSignalDetector:
         assert len(signals) == 1
         expected_bw = num_bins * (2_048_000 / 4096)
         assert signals[0].bandwidth_hz == pytest.approx(expected_bw, rel=0.01)
+
+
+class TestEdgeGuard:
+    """Band-edge guard masking (capture-quality fix, default off)."""
+
+    def test_edge_guard_masks_edge_signal(self):
+        """With edge guard on, a signal at the band edge is ignored, mid kept."""
+        config = {
+            "threshold_db": 10.0, "min_bandwidth_hz": 500,
+            "max_signals_per_step": 10, "edge_guard_fraction": 0.1,
+        }
+        detector = SignalDetector(config)
+        psd = np.full(4096, -100.0)
+        psd[0:50] = -80.0          # edge signal (within outer 10%)
+        psd[2000:2100] = -80.0     # mid-band signal
+        step = _make_scan_step(psd, noise_floor_dbm=-100.0)
+        signals = detector.detect(step)
+        assert len(signals) == 1
+        assert abs(signals[0].centre_freq_hz - 100e6) < 1e6  # the mid-band one
+
+    def test_edge_signal_detected_when_off(self):
+        """Default (edge_guard_fraction=0) still detects edge signals."""
+        config = {
+            "threshold_db": 10.0, "min_bandwidth_hz": 500,
+            "max_signals_per_step": 10,
+        }
+        detector = SignalDetector(config)
+        psd = np.full(4096, -100.0)
+        psd[0:50] = -80.0
+        psd[2000:2100] = -80.0
+        step = _make_scan_step(psd, noise_floor_dbm=-100.0)
+        signals = detector.detect(step)
+        assert len(signals) == 2

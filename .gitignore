@@ -31,6 +31,11 @@ data/*.db
 # IQ sample captures
 data/iq_samples/
 
+# Recorded replay sessions (large binary IQ corpus)
+sessions/
+*.sigmf-data
+*.sigmf-meta
+
 # Matplotlib output (keep project logo and web assets)
 *.png
 !Skaði logo.png

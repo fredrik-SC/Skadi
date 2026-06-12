@@ -52,6 +52,20 @@ Override the scan section with band-specific parameters:
 | `detection.max_signals_per_step` | `20` | Maximum concurrent signals per step |
 | `detection.noise_window_size` | `10` | Rolling noise floor window (scan steps) |
 | `detection.noise_alpha` | `0.3` | Noise EMA weight (0=all history, 1=current only) |
+| `detection.edge_guard_fraction` | `0.0` | Fraction of outer PSD bins ignored for detection (filter rolloff at band edges). `0.0` = off. Pair with `step_size ≈ 0.8 × sample_rate`. |
+
+### Capture-Quality Settings
+
+These improve the fidelity of live captures. All default to a no-op so behaviour
+is unchanged until enabled. They affect processing only — recorded IQ is always
+stored raw, so recordings can be reprocessed as these settings change.
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `capture.flush_samples` | `0` | Samples read and discarded after each retune before the real capture (clears settling/stale samples). `0` = off. |
+| `capture.retune_settle_time` | `0.01` | Settling delay after retuning, in seconds. |
+| `capture.dc_removal` | `false` | Subtract the complex mean per FFT segment and blank the centre PSD bin(s) to kill the DC spike (otherwise a false detection appears at every step centre). |
+| `capture.dc_blank_bins` | `1` | Central bins each side of DC to blank when `dc_removal` is on. |
 
 ### Fingerprint Settings
 

@@ -76,7 +76,31 @@ python -m src.main --preset vhf --single --no-web --export data/export.json
 | `--single` | Run one sweep and exit |
 | `--no-web` | Disable web dashboard (CLI only) |
 | `--export PATH` | Export detections to JSON after scanning |
+| `--record DIR` | Record raw IQ per scan step into DIR (implies a single sweep) |
+| `--replay DIR` | Replay a recorded session from DIR instead of a live SDR |
+| `--label TEXT` | Operator label stored in the recording session manifest |
 | `--log-level` | Set logging level (DEBUG, INFO, WARNING, ERROR) |
+
+### Recording and Replaying IQ
+
+Record a live sweep to disk as a SigMF session, then replay it deterministically
+through the full pipeline with no hardware connected. This is the basis for
+building a labelled signal corpus and for regression-testing the DSP.
+
+```bash
+# Record a single sweep of the FM broadcast band (ground truth you can verify)
+python -m src.main --no-web --single --start 88e6 --stop 108e6 \
+    --record sessions/fm_groundtruth --label "FM 88-108"
+
+# Replay it — restores the recorded scan config automatically
+python -m src.main --no-web --single --replay sessions/fm_groundtruth
+```
+
+Recordings are stored as one SigMF pair (`.sigmf-data` + `.sigmf-meta`) per scan
+step plus a `session.json` manifest. Raw IQ is recorded faithfully (including the
+DC spike); capture-quality cleanups are applied at processing time, so the same
+recording can be reprocessed as those settings improve. See the `capture:` section
+in `docs/CONFIGURATION.md` for DC removal, edge guard, and post-retune flush.
 
 ### Web Dashboard
 

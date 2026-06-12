@@ -50,13 +50,20 @@ class SDRInterface:
             samples = sdr.capture(num_samples=2048000)
     """
 
-    def __init__(self, sdr_config: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        sdr_config: dict[str, Any],
+        capture_config: dict[str, Any] | None = None,
+    ) -> None:
         self._driver: str = sdr_config.get("driver", "sdrplay")
         self._mode: str = sdr_config.get("mode", "ST")
         self._sample_rate: float = float(sdr_config.get("sample_rate", 2_048_000))
         self._bandwidth: float = float(sdr_config.get("bandwidth", 0))
         self._agc: bool = sdr_config.get("agc", True)
         self._gain_reduction: float = float(sdr_config.get("gain_reduction", 0))
+
+        cap = capture_config or {}
+        self._flush_samples: int = int(cap.get("flush_samples", 0))
 
         self._device: Any | None = None
         self._stream: Any | None = None
@@ -226,6 +233,20 @@ class SDRInterface:
             raise SDRConnectionError("Device not connected or stream not set up")
 
         self._device.activateStream(self._stream)
+
+        # Discard settling/stale samples left over from the previous tuning
+        # before the real capture. Read errors during the flush are non-fatal.
+        if self._flush_samples > 0:
+            flushed = 0
+            flush_buf = np.zeros(_READ_CHUNK_SIZE, dtype=np.complex64)
+            while flushed < self._flush_samples:
+                chunk_size = min(_READ_CHUNK_SIZE, self._flush_samples - flushed)
+                result = self._device.readStream(
+                    self._stream, [flush_buf], chunk_size, timeoutUs=1_000_000,
+                )
+                if result.ret <= 0:
+                    break
+                flushed += result.ret
 
         buffer = np.zeros(num_samples, dtype=np.complex64)
         samples_read = 0

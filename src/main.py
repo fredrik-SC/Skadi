@@ -44,11 +44,21 @@ def _run_scan_loop(
     fingerprint_extractor,
     signal_classifier,
     threat_mapper,
+    sdr_factory=None,
     app=None,
     broadcaster=None,
     single: bool = False,
 ) -> None:
-    """Run the scan loop with SDR crash resilience and UI control."""
+    """Run the scan loop with SDR crash resilience and UI control.
+
+    Args:
+        sdr_factory: Zero-argument callable returning a context-managed
+            SdrSource. Defaults to a live SDRInterface when not supplied,
+            which keeps the live path working. Record and replay modes pass
+            a factory that wraps or replaces the live source.
+    """
+    if sdr_factory is None:
+        sdr_factory = lambda: SDRInterface(sdr_config, config.get("capture", {}))
     global _shutdown_requested
     sweep_count = 0
     active_scan_config = scan_config.copy()
@@ -102,7 +112,7 @@ def _run_scan_loop(
 
         # Try to connect to SDR and run a sweep
         try:
-            with SDRInterface(sdr_config) as sdr:
+            with sdr_factory() as sdr:
                 scanner = SpectrumScanner(
                     sdr, active_scan_config, sdr_config, detection_config,
                     exclusion_filter=exclusion_filter,
@@ -110,6 +120,7 @@ def _run_scan_loop(
                     fingerprint_extractor=fingerprint_extractor,
                     signal_classifier=signal_classifier,
                     threat_mapper=threat_mapper,
+                    capture_config=config.get("capture", {}),
                 )
 
                 # Run sweeps until stopped or SDR disconnects
@@ -205,7 +216,22 @@ def main() -> None:
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
         help="Logging level (default: INFO)",
     )
+    parser.add_argument(
+        "--record", type=str, default=None, metavar="DIR",
+        help="Record raw IQ per scan step into DIR (implies a single sweep)",
+    )
+    parser.add_argument(
+        "--replay", type=str, default=None, metavar="DIR",
+        help="Replay a recorded session from DIR instead of a live SDR",
+    )
+    parser.add_argument(
+        "--label", type=str, default=None,
+        help="Operator label stored in the recording session manifest",
+    )
     args = parser.parse_args()
+
+    if args.record and args.replay:
+        parser.error("--record and --replay are mutually exclusive")
 
     logging.basicConfig(
         level=getattr(logging, args.log_level),
@@ -230,6 +256,22 @@ def main() -> None:
         scan_config["freq_start"] = args.start
     if args.stop:
         scan_config["freq_stop"] = args.stop
+
+    # Replay mode: restore the exact scan/SDR config from the session manifest
+    # so the scanner regenerates the identical step frequencies it recorded.
+    replay_source = None
+    if args.replay:
+        from src.sdr.replay import ReplaySource
+        replay_source = ReplaySource(Path(args.replay))
+        sdr_config = {**sdr_config, **replay_source.sdr_config}
+        scan_config = {**scan_config, **replay_source.scan_config}
+        logger.info("Replay mode: restored scan/SDR config from %s", args.replay)
+
+    # Recording a continuous loop would overwrite the session each retry, so
+    # recording always runs as a single sweep.
+    if args.record and not args.single:
+        args.single = True
+        logger.info("Record mode: running a single sweep")
 
     print("\n" + "=" * 60)
     print("  SKADI -- RF Signal Identification Tool v1.0")
@@ -269,6 +311,22 @@ def main() -> None:
 
     print("=" * 60 + "\n")
 
+    # Build the SDR source factory for the selected mode. The scan loop calls
+    # this on each (re)connect, so it must return a fresh context-managed source.
+    capture_config = config.get("capture", {})
+    if replay_source is not None:
+        sdr_factory = lambda: replay_source
+    elif args.record:
+        from src.sdr.recorder import RecordingSDR, SigmfRecorder
+
+        def sdr_factory():
+            recorder = SigmfRecorder(
+                Path(args.record), scan_config, sdr_config, label=args.label,
+            )
+            return RecordingSDR(SDRInterface(sdr_config, capture_config), recorder)
+    else:
+        sdr_factory = lambda: SDRInterface(sdr_config, capture_config)
+
     scan_kwargs = dict(
         sdr_config=sdr_config,
         scan_config=scan_config,
@@ -279,6 +337,7 @@ def main() -> None:
         fingerprint_extractor=fingerprint_extractor,
         signal_classifier=signal_classifier,
         threat_mapper=threat_mapper,
+        sdr_factory=sdr_factory,
         single=args.single,
     )
 

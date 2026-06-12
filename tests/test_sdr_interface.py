@@ -168,6 +168,27 @@ class TestSDRInterface:
         sdr.disconnect()
 
     @patch("src.sdr.interface.SoapySDR")
+    def test_capture_flush_discards_then_captures(self, mock_soapy, sdr_config, mock_device):
+        """flush_samples reads and discards before the real capture."""
+        mock_soapy.Device.return_value = mock_device
+        mock_soapy.SOAPY_SDR_RX = 0
+        mock_soapy.SOAPY_SDR_CF32 = "CF32"
+
+        result = MagicMock()
+        result.ret = 512
+        mock_device.readStream.return_value = result
+
+        # Flush 1024 samples (2 reads) then capture 1024 (2 reads) = 4 reads.
+        sdr = SDRInterface(sdr_config, {"flush_samples": 1024})
+        sdr.connect()
+        sdr.tune(100e6)
+        samples = sdr.capture(1024)
+
+        assert len(samples) == 1024
+        assert mock_device.readStream.call_count == 4
+        sdr.disconnect()
+
+    @patch("src.sdr.interface.SoapySDR")
     def test_capture_handles_error(self, mock_soapy, sdr_config, mock_device):
         """Capture raises SDRStreamError on negative return code."""
         mock_soapy.Device.return_value = mock_device

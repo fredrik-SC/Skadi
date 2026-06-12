@@ -33,6 +33,9 @@ class SignalDetector:
         self._threshold_db = float(detection_config.get("threshold_db", 10.0))
         self._min_bandwidth_hz = float(detection_config.get("min_bandwidth_hz", 500))
         self._max_signals = int(detection_config.get("max_signals_per_step", 10))
+        self._edge_guard_fraction = float(
+            detection_config.get("edge_guard_fraction", 0.0)
+        )
 
     def detect(self, scan_step: ScanStep) -> list[DetectedSignal]:
         """Detect signals in a single scan step's PSD data.
@@ -52,6 +55,16 @@ class SignalDetector:
 
         # Find bins above threshold
         above = psd > threshold
+
+        # Ignore the outer band edges where the anti-alias filter rolls off;
+        # those bins produce spurious detections. Neighbouring scan steps
+        # (with overlapping step size) cover the masked region.
+        if self._edge_guard_fraction > 0:
+            guard = int(len(above) * self._edge_guard_fraction)
+            if guard > 0:
+                above[:guard] = False
+                above[-guard:] = False
+
         if not np.any(above):
             return []
 
