@@ -34,7 +34,11 @@ class _Classifier(Protocol):
     def classify(self, fingerprint: Any) -> Any: ...
 
 
-def _build_classifier(artemis_path: Path, classification_config: dict) -> _Classifier | None:
+def _build_classifier(
+    artemis_path: Path,
+    classification_config: dict,
+    band_plan: object | None = None,
+) -> _Classifier | None:
     """Build the Artemis classifier, or None if the database is unavailable."""
     if not artemis_path.exists():
         logger.warning(
@@ -46,7 +50,7 @@ def _build_classifier(artemis_path: Path, classification_config: dict) -> _Class
     from src.classification.classifier import SignalClassifier
 
     db = ArtemisDB(artemis_path)
-    return SignalClassifier(db, classification_config)
+    return SignalClassifier(db, classification_config, band_plan=band_plan)
 
 
 def run_benchmark(
@@ -56,6 +60,7 @@ def run_benchmark(
     *,
     artemis_path: Path,
     classifier: _Classifier | None = None,
+    band_plan: object | None = None,
     classification_top_n: int = 3,
 ) -> BenchmarkReport:
     """Replay a recorded session and score it against ground truth.
@@ -96,7 +101,9 @@ def run_benchmark(
     result = scanner.sweep()
 
     if classifier is None:
-        classifier = _build_classifier(artemis_path, config.get("classification", {}))
+        classifier = _build_classifier(
+            artemis_path, config.get("classification", {}), band_plan=band_plan,
+        )
 
     detections: list[DetectionRecord] = []
     for fp in result.fingerprints:

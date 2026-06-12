@@ -1,0 +1,87 @@
+# Skaði frequency band plan (ITU Region 1; Sweden / Denmark focus)
+# ================================================================
+# A classification PRIOR, not a filter. Each band lists the service expected at
+# those frequencies and the modulations/bandwidths typical of it. The classifier
+# uses this to mildly boost band-consistent matches and to FLAG signals whose
+# modulation is unexpected for the band — an unexpected mode (e.g. a military
+# data mode in a civilian band) is mission-relevant and must be surfaced, never
+# suppressed.
+#
+# Bands are matched first-to-last; list narrower/more-specific bands first.
+# Frequencies in Hz. Coverage is not exhaustive — extend as needed.
+
+bands:
+  # ---- HF (3-30 MHz) ----
+  - freq_start_hz: 3000000
+    freq_stop_hz: 30000000
+    service: "HF (shortwave / utility / military)"
+    expected_modulations: ["AM", "SSB", "CW", "FSK", "PSK", "MFSK", "OOK"]
+    typical_bandwidth_min_hz: 100
+    typical_bandwidth_max_hz: 12000
+    notes: "Broad HF block: broadcast, utility, amateur, military data modes (STANAG, CIS)"
+
+  # ---- VHF low / band I-II ----
+  - freq_start_hz: 87500000
+    freq_stop_hz: 108000000
+    service: "FM Broadcast"
+    expected_modulations: ["FM", "WFM"]
+    typical_bandwidth_min_hz: 120000
+    typical_bandwidth_max_hz: 256000
+    notes: "Region 1 FM sound broadcasting"
+
+  - freq_start_hz: 108000000
+    freq_stop_hz: 117975000
+    service: "Aeronautical Radionavigation (VOR/ILS)"
+    expected_modulations: ["AM"]
+    typical_bandwidth_min_hz: 5000
+    typical_bandwidth_max_hz: 25000
+    notes: "VOR/ILS localizer"
+
+  - freq_start_hz: 118000000
+    freq_stop_hz: 137000000
+    service: "Aeronautical Mobile (Airband)"
+    expected_modulations: ["AM"]
+    typical_bandwidth_min_hz: 6000
+    typical_bandwidth_max_hz: 8500
+    notes: "Civil aviation AM voice (8.33/25 kHz channels). ATIS continuous."
+
+  - freq_start_hz: 144000000
+    freq_stop_hz: 146000000
+    service: "2 m Amateur"
+    expected_modulations: ["NFM", "FM", "SSB", "CW", "PSK", "FSK"]
+    typical_bandwidth_min_hz: 500
+    typical_bandwidth_max_hz: 16000
+    notes: "Mixed-mode amateur incl. FT8/FT4 weak-signal digital at 144.17 MHz"
+
+  - freq_start_hz: 156000000
+    freq_stop_hz: 162050000
+    service: "VHF Maritime Mobile"
+    expected_modulations: ["NFM", "FM"]
+    typical_bandwidth_min_hz: 12000
+    typical_bandwidth_max_hz: 16000
+    notes: "Marine VHF voice + AIS (161.975/162.025)"
+
+  - freq_start_hz: 162000000
+    freq_stop_hz: 174000000
+    service: "VHF Land Mobile / Tactical"
+    expected_modulations: ["NFM", "FM", "FSK", "DMR"]
+    typical_bandwidth_min_hz: 6250
+    typical_bandwidth_max_hz: 25000
+    notes: "PMR, public safety, tactical land mobile"
+
+  # ---- UHF ----
+  - freq_start_hz: 225000000
+    freq_stop_hz: 400000000
+    service: "Military UHF / Aeronautical"
+    expected_modulations: ["AM", "FM", "FSK", "PSK"]
+    typical_bandwidth_min_hz: 8000
+    typical_bandwidth_max_hz: 25000
+    notes: "Military air/ground UHF voice and data"
+
+  - freq_start_hz: 400000000
+    freq_stop_hz: 470000000
+    service: "UHF Land Mobile"
+    expected_modulations: ["NFM", "FM", "FSK", "DMR", "C4FM"]
+    typical_bandwidth_min_hz: 6250
+    typical_bandwidth_max_hz: 25000
+    notes: "PMR446, TETRA-adjacent, public safety"

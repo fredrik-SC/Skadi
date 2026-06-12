@@ -12,6 +12,7 @@ from typing import Any
 import numpy as np
 
 from src.detection.models import DetectedSignal, ScanStep
+from src.dsp.bandwidth import occupied_bandwidth
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,11 @@ class SignalDetector:
         self._max_signals = int(detection_config.get("max_signals_per_step", 10))
         self._edge_guard_fraction = float(
             detection_config.get("edge_guard_fraction", 0.0)
+        )
+        # dB above the noise floor below which power is treated as noise when
+        # integrating occupied bandwidth (suppresses the noise pedestal).
+        self._obw_noise_margin_db = float(
+            detection_config.get("occupied_bw_noise_margin_db", 6.0)
         )
 
     def detect(self, scan_step: ScanStep) -> list[DetectedSignal]:
@@ -99,6 +105,21 @@ class SignalDetector:
 
             snr_db = peak_power_dbm - noise_floor
 
+            # Occupied bandwidth (ITU-R SM.443 99% power) over the full step PSD,
+            # not just the threshold region — that region clips sidebands (e.g.
+            # AM voice) down to the carrier. A window around the peak keeps a
+            # neighbouring signal from biasing the integral.
+            obw = occupied_bandwidth(
+                freqs, psd,
+                peak_freq_hz=centre_freq_hz,
+                beta=0.01,
+                power_is_db=True,
+                noise_floor_db=noise_floor,
+                noise_margin_db=self._obw_noise_margin_db,
+                window_hz=max(bandwidth_hz * 4.0, 50_000.0),
+            )
+            occupied_bw = obw[2] if obw is not None else None
+
             signals.append(DetectedSignal(
                 centre_freq_hz=centre_freq_hz,
                 bandwidth_hz=bandwidth_hz,
@@ -107,6 +128,7 @@ class SignalDetector:
                 snr_db=snr_db,
                 timestamp=scan_step.timestamp,
                 scan_step_freq_hz=scan_step.centre_freq_hz,
+                occupied_bandwidth_hz=occupied_bw,
             ))
 
         # Merge narrowband subcomponents into their parent wideband signals.

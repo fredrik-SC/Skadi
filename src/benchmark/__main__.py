@@ -49,6 +49,11 @@ def main() -> int:
                         help="Enable capture.dc_removal")
     parser.add_argument("--top-n", type=int, default=3,
                         help="Classification match depth (default: 3)")
+    parser.add_argument("--band-plan", dest="band_plan", action="store_true",
+                        default=False,
+                        help="Enable the band-plan classification prior")
+    parser.add_argument("--no-band-plan", dest="band_plan", action="store_false",
+                        help="Disable the band-plan prior (isolate its effect)")
     parser.add_argument("--json", type=Path, default=None, dest="json_out",
                         help="Write JSON results to this path")
     parser.add_argument("--seed-truth", action="store_true",
@@ -102,11 +107,17 @@ def main() -> int:
 
     artemis_path = PROJECT_ROOT / "data" / "artemis.db"
 
+    band_plan = None
+    if args.band_plan:
+        from src.classification.bandplan import BandPlan
+        band_plan = BandPlan(PROJECT_ROOT / "config" / "band_plan.yaml")
+
     report = run_benchmark(
         args.session,
         truth,
         config,
         artemis_path=artemis_path,
+        band_plan=band_plan,
         classification_top_n=args.top_n,
     )
 

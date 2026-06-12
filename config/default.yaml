@@ -81,6 +81,9 @@ detection:
   # edges). 0.0 = off. Pair with a step_size of ~0.8 x sample_rate so the
   # masked edges are covered by the neighbouring step.
   edge_guard_fraction: 0.0
+  # dB above the noise floor below which power counts as noise when integrating
+  # the occupied (99%-power) bandwidth — suppresses the noise pedestal.
+  occupied_bw_noise_margin_db: 3.0
 
 capture:
   # Samples to read and discard after each retune/stream activation, before the
@@ -101,6 +104,9 @@ fingerprint:
   guard_factor: 3.0
   # FIR filter order for signal isolation (overridden adaptively for narrowband)
   filter_numtaps: 101
+  # Minimum isolation filter bandwidth in Hz (floor so a tiny occupied-bandwidth
+  # estimate cannot collapse the isolation filter)
+  min_filter_bw_hz: 500
   # ACF search range in milliseconds
   acf_min_lag_ms: 1.0
   acf_max_lag_ms: 5000.0

@@ -40,10 +40,12 @@ class SignalIsolator:
         sample_rate: float = 2_048_000,
         guard_factor: float = 3.0,
         filter_numtaps: int = 101,
+        min_filter_bw_hz: float = 500.0,
     ) -> None:
         self._sample_rate = sample_rate
         self._guard_factor = guard_factor
         self._min_filter_numtaps = filter_numtaps
+        self._min_filter_bw_hz = min_filter_bw_hz
 
     def isolate(
         self,
@@ -77,7 +79,7 @@ class SignalIsolator:
         # Filter bandwidth with guard margin
         filter_bw = signal_bandwidth_hz * self._guard_factor
         # Ensure a reasonable minimum filter bandwidth
-        filter_bw = max(filter_bw, 500.0)
+        filter_bw = max(filter_bw, self._min_filter_bw_hz)
 
         # Compute total decimation needed
         total_decim = max(1, int(self._sample_rate / filter_bw))

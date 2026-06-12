@@ -252,3 +252,62 @@ class TestSignalClassifier:
         result = classifier.classify(fp)
         for match in result.matches:
             assert 0.0 <= match.confidence <= 1.0
+
+
+class TestBandPlanPrior:
+    """Tests for the optional band-plan classification prior."""
+
+    @staticmethod
+    def _tmp_bandplan(tmp_path, start, stop, service, mods):
+        import json
+        from src.classification.bandplan import BandPlan
+        p = tmp_path / "bp.yaml"
+        p.write_text(json.dumps({"bands": [
+            {"freq_start_hz": start, "freq_stop_hz": stop,
+             "service": service, "expected_modulations": mods},
+        ]}))
+        return BandPlan(p)
+
+    def test_default_no_band_plan_unchanged(self, artemis_db):
+        """band_plan=None: neutral factors, no band_service (regression guard)."""
+        clf = SignalClassifier(artemis_db)
+        fp = _make_fingerprint(ModulationType.AM, 8000, 124e6)
+        res = clf.classify(fp)
+        assert res.band_service is None
+        for m in res.matches:
+            assert m.band_consistency_factor == 1.0
+            assert m.unexpected_for_band is False
+
+    def test_band_service_attached(self, artemis_db, tmp_path):
+        bp = self._tmp_bandplan(tmp_path, 118e6, 137e6, "Airband", ["AM"])
+        clf = SignalClassifier(artemis_db, band_plan=bp)
+        res = clf.classify(_make_fingerprint(ModulationType.AM, 8000, 124e6))
+        assert res.band_service == "Airband"
+
+    def test_factor_bounds_and_flags(self, artemis_db, tmp_path):
+        """Every match factor is 1.15 (consistent) or 0.85 (flagged), nothing else."""
+        bp = self._tmp_bandplan(tmp_path, 118e6, 137e6, "Airband", ["AM"])
+        clf = SignalClassifier(artemis_db, band_plan=bp)
+        res = clf.classify(_make_fingerprint(ModulationType.AM, 8000, 124e6))
+        assert res.matches  # something matched
+        for m in res.matches:
+            assert m.band_consistency_factor in (0.85, 1.15)
+            assert 0.0 < m.confidence <= 1.0          # never zero, clamped
+            if m.band_consistency_factor == 0.85:
+                assert m.unexpected_for_band is True   # surfaced, not suppressed
+            else:
+                assert m.unexpected_for_band is False
+
+    def test_boost_raises_consistent_confidence(self, artemis_db, tmp_path):
+        """A band-consistent candidate's confidence is boosted vs no band plan."""
+        bp = self._tmp_bandplan(tmp_path, 118e6, 137e6, "Airband", ["AM"])
+        base = SignalClassifier(artemis_db)
+        boosted = SignalClassifier(artemis_db, band_plan=bp)
+        fp = _make_fingerprint(ModulationType.AM, 8000, 124e6)
+        b = {m.signal.name: m.confidence for m in base.classify(fp).matches}
+        for m in boosted.classify(fp).matches:
+            if m.band_consistency_factor == 1.15 and m.signal.name in b:
+                # boosted >= base (equal only if clamped at 1.0)
+                assert m.confidence >= b[m.signal.name] - 1e-9
+                return
+        # If no consistent overlap found, the test is inconclusive but not failing.

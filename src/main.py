@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from src.classification.artemis_db import ArtemisDB
+from src.classification.bandplan import BandPlan
 from src.classification.classifier import SignalClassifier
 from src.classification.threat import ThreatMapper
 from src.config import PROJECT_ROOT, load_config
@@ -294,12 +295,19 @@ def main() -> None:
         config=config.get("fingerprint", {}),
     )
 
+    band_plan_path = PROJECT_ROOT / "config" / "band_plan.yaml"
+    band_plan = BandPlan(band_plan_path) if band_plan_path.exists() else None
+
     artemis_path = PROJECT_ROOT / "data" / "artemis.db"
     signal_classifier = None
     if artemis_path.exists():
         artemis_db = ArtemisDB(artemis_path)
-        signal_classifier = SignalClassifier(artemis_db, config.get("classification", {}))
+        signal_classifier = SignalClassifier(
+            artemis_db, config.get("classification", {}), band_plan=band_plan,
+        )
         print(f"  Artemis DB: {len(artemis_db.signals)} signals")
+        if band_plan is not None:
+            print(f"  Band plan:  {len(band_plan.entries)} bands")
 
     threat_mapper = ThreatMapper(PROJECT_ROOT / "config" / "threat_levels.yaml")
     print(f"  Threats:    {len(threat_mapper._rules)} rules (default: {threat_mapper.default_level})")

@@ -12,6 +12,7 @@ from typing import Any
 import numpy as np
 
 from src.detection.models import DetectedSignal, ScanStep
+from src.dsp.bandwidth import occupied_bandwidth
 from src.fingerprint.acf import ACFComputer
 from src.fingerprint.isolation import SignalIsolator
 from src.fingerprint.models import ModulationType, SignalFingerprint
@@ -44,6 +45,7 @@ class FingerprintExtractor:
             sample_rate=sample_rate,
             guard_factor=float(cfg.get("guard_factor", 1.5)),
             filter_numtaps=int(cfg.get("filter_numtaps", 101)),
+            min_filter_bw_hz=float(cfg.get("min_filter_bw_hz", 500.0)),
         )
         self._classifier = ModulationClassifier(
             min_snr_db=float(cfg.get("min_snr_db", 8.0)),
@@ -82,24 +84,29 @@ class FingerprintExtractor:
                 features=ModulationFeatures(0, 0, 0, 0, 0, 0),
             )
 
+        # Prefer the occupied-bandwidth estimate (SM.443) over the threshold
+        # width to drive isolation and modulation. Falling back to bandwidth_hz
+        # keeps no-IQ / unit-test paths bit-identical to before.
+        est_bw = signal.occupied_bandwidth_hz or signal.bandwidth_hz
+
         # Isolate the signal from the wideband capture
         isolated_iq, isolated_sr = self._isolator.isolate(
             iq_data=scan_step.iq_data,
             step_centre_hz=scan_step.centre_freq_hz,
             signal_centre_hz=signal.centre_freq_hz,
-            signal_bandwidth_hz=signal.bandwidth_hz,
+            signal_bandwidth_hz=est_bw,
         )
 
-        # Classify modulation
+        # Classify modulation (now fed the occupied bandwidth, not the sliver)
         mod_type, mod_conf, features = self._classifier.classify(
             iq_data=isolated_iq,
             sample_rate=isolated_sr,
             snr_db=signal.snr_db,
-            bandwidth_hz=signal.bandwidth_hz,
+            bandwidth_hz=est_bw,
         )
 
-        # Refine bandwidth from isolated signal's PSD
-        refined_bw = self._refine_bandwidth(isolated_iq, isolated_sr, signal.bandwidth_hz)
+        # Refine bandwidth from isolated signal's PSD (same beta-method)
+        refined_bw = self._refine_bandwidth(isolated_iq, isolated_sr, est_bw)
 
         # Compute ACF
         acf_ms, acf_strength = self._acf.compute(isolated_iq, isolated_sr)
@@ -156,10 +163,13 @@ class FingerprintExtractor:
         sample_rate: float,
         fallback_bw: float,
     ) -> float:
-        """Refine bandwidth estimate from isolated signal's PSD.
+        """Refine bandwidth from the isolated signal's PSD.
 
-        Measures the -10 dB bandwidth from the peak of the isolated
-        signal's power spectrum.
+        Uses the ITU-R SM.443 99%-power occupied bandwidth on the isolated
+        (single-signal) spectrum — the same method used at detection — for a
+        consistent measurement. No upward clamp to the detection estimate: the
+        occupied-bandwidth value is the authoritative one (the old clamp was
+        what forced narrowband AM back up to a wrong threshold estimate).
 
         Args:
             iq_data: Isolated IQ samples.
@@ -174,23 +184,9 @@ class FingerprintExtractor:
 
         fft_size = min(len(iq_data), 4096)
         psd = np.abs(np.fft.fftshift(np.fft.fft(iq_data[:fft_size]))) ** 2
-        psd_db = 10.0 * np.log10(np.maximum(psd, 1e-20))
+        freqs = np.fft.fftshift(np.fft.fftfreq(fft_size, d=1.0 / sample_rate))
 
-        peak_db = np.max(psd_db)
-        threshold_db = peak_db - 10.0
-
-        # Count bins above -10 dB from peak
-        above = psd_db > threshold_db
-        num_bins = int(np.sum(above))
-
-        if num_bins == 0:
+        obw = occupied_bandwidth(freqs, psd, beta=0.01, power_is_db=False)
+        if obw is None or obw[2] <= 0.0:
             return fallback_bw
-
-        bin_width = sample_rate / fft_size
-        refined = num_bins * bin_width
-
-        # Use the maximum of refined and detection-stage bandwidth.
-        # The detector's contiguous-bin estimate is reliable for wideband
-        # signals; the refinement can underestimate if the isolation filter
-        # shaped the spectrum.
-        return max(refined, fallback_bw)
+        return obw[2]
