@@ -7,6 +7,8 @@ configuration, tuning, and IQ sample capture in single-tuner mode.
 from __future__ import annotations
 
 import logging
+import os
+import sys
 from typing import Any
 
 import numpy as np
@@ -29,6 +31,27 @@ _CF32 = SoapySDR.SOAPY_SDR_CF32
 
 # Maximum samples per readStream call (SoapySDR typical limit)
 _READ_CHUNK_SIZE = 65536
+
+# Devices deliberately retained (never released) under fast-shutdown mode.
+# The SoapySDRPlay3 plugin aborts the process inside ReleaseDevice() on teardown
+# (an uncatchable C++ abort) and can leave the SDRPlay API service holding a
+# stale claim. Keeping a reference here prevents the Device destructor from
+# running; the live entrypoint pairs this with fast_exit() to skip teardown
+# entirely. The OS closes the USB handle on process death and the service
+# reclaims the device on the next open.
+_RETAINED_DEVICES: list[Any] = []
+
+
+def fast_exit(code: int = 0) -> None:
+    """Flush output and hard-exit, bypassing the SoapySDRPlay3 teardown crash.
+
+    Uses os._exit so no destructors or atexit handlers run — in particular the
+    SoapySDR Device destructor, which would call the crash-prone ReleaseDevice.
+    Only call this once all data has been persisted.
+    """
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(code)
 
 
 class SDRInterface:
@@ -64,6 +87,9 @@ class SDRInterface:
 
         cap = capture_config or {}
         self._flush_samples: int = int(cap.get("flush_samples", 0))
+        # When set, skip the crash-prone ReleaseDevice on disconnect and rely on
+        # fast_exit() to tear the process down. Off by default (and for tests).
+        self._fast_shutdown: bool = bool(cap.get("fast_shutdown", False))
 
         self._device: Any | None = None
         self._stream: Any | None = None
@@ -167,13 +193,21 @@ class SDRInterface:
             logger.info("SDR stream closed")
 
         if self._device is not None:
-            try:
-                # Explicitly unmake before GC to avoid destructor crash
-                SoapySDR.Device.unmake(self._device)
-            except Exception:
-                pass
-            self._device = None
-            logger.info("SDR device disconnected")
+            if self._fast_shutdown:
+                # Skip ReleaseDevice (it aborts the process and can wedge the
+                # API service). Retain the device so its destructor never runs;
+                # the entrypoint calls fast_exit() to skip teardown entirely.
+                _RETAINED_DEVICES.append(self._device)
+                self._device = None
+                logger.info("SDR device retained (fast shutdown; ReleaseDevice skipped)")
+            else:
+                try:
+                    # Explicitly unmake before GC to avoid destructor crash
+                    SoapySDR.Device.unmake(self._device)
+                except Exception:
+                    pass
+                self._device = None
+                logger.info("SDR device disconnected")
 
     def tune(self, frequency_hz: float) -> float:
         """Set the centre frequency of the receiver.

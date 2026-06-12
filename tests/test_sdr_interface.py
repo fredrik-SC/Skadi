@@ -115,6 +115,35 @@ class TestSDRInterface:
         assert not sdr.connected
 
     @patch("src.sdr.interface.SoapySDR")
+    def test_fast_shutdown_skips_unmake(self, mock_soapy, sdr_config, mock_device):
+        """Fast shutdown retains the device and never calls the crash-prone unmake."""
+        from src.sdr import interface as iface
+        mock_soapy.Device.return_value = mock_device
+
+        sdr = SDRInterface(sdr_config, {"fast_shutdown": True})
+        sdr.connect()
+        retained_before = len(iface._RETAINED_DEVICES)
+        sdr.disconnect()
+
+        # ReleaseDevice/unmake must NOT be called (it aborts the process live).
+        mock_soapy.Device.unmake.assert_not_called()
+        assert not sdr.connected
+        # The device is retained so its destructor never runs.
+        assert len(iface._RETAINED_DEVICES) == retained_before + 1
+
+    @patch("src.sdr.interface.SoapySDR")
+    def test_default_shutdown_calls_unmake(self, mock_soapy, sdr_config, mock_device):
+        """Without fast shutdown, disconnect releases the device as before."""
+        mock_soapy.Device.return_value = mock_device
+
+        sdr = SDRInterface(sdr_config)  # fast_shutdown defaults off
+        sdr.connect()
+        sdr.disconnect()
+
+        mock_soapy.Device.unmake.assert_called_once()
+        assert not sdr.connected
+
+    @patch("src.sdr.interface.SoapySDR")
     def test_context_manager(self, mock_soapy, sdr_config, mock_device):
         """Context manager connects on entry and disconnects on exit."""
         mock_soapy.Device.return_value = mock_device

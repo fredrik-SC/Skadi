@@ -313,7 +313,12 @@ def main() -> None:
 
     # Build the SDR source factory for the selected mode. The scan loop calls
     # this on each (re)connect, so it must return a fresh context-managed source.
-    capture_config = config.get("capture", {})
+    capture_config = dict(config.get("capture", {}))
+    # On any live-SDR path, skip the crash-prone SoapySDRPlay3 ReleaseDevice and
+    # hard-exit instead (see fast_exit at the end of main). Replay never uses it.
+    live_sdr = replay_source is None
+    if live_sdr:
+        capture_config["fast_shutdown"] = True
     if replay_source is not None:
         sdr_factory = lambda: replay_source
     elif args.record:
@@ -390,6 +395,13 @@ def main() -> None:
         export_path = Path(args.export)
         count = export_json(log_path, export_path)
         print(f"Exported {count} detection(s) to {export_path}")
+
+    # Live SDR path: hard-exit to bypass the SoapySDRPlay3 teardown crash that
+    # otherwise aborts the process (SIGABRT) and can wedge the API service.
+    # All data is already persisted by this point.
+    if live_sdr:
+        from src.sdr.interface import fast_exit
+        fast_exit(0)
 
 
 if __name__ == "__main__":
