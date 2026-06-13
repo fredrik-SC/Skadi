@@ -123,3 +123,26 @@ class TestWebSocket:
         received = client.get_received()
         assert any(msg["name"] == "status" for msg in received)
         client.disconnect()
+
+
+class TestCorrectionEndpoint:
+    """Tests for the operator-correction endpoint (active-learning loop)."""
+
+    def test_correct_valid(self, app_with_data):
+        client = app_with_data.test_client()
+        r = client.post("/api/detection/1/correct", json={"modulation": "FSK"})
+        assert r.status_code == 200
+        assert r.get_json()["modulation"] == "FSK"
+        # The detail endpoint reflects the correction.
+        detail = client.get("/api/detection/1").get_json()
+        assert detail["corrected_modulation"] == "FSK"
+
+    def test_correct_invalid_modulation(self, app_with_data):
+        client = app_with_data.test_client()
+        r = client.post("/api/detection/1/correct", json={"modulation": "BOGUS"})
+        assert r.status_code == 400
+
+    def test_correct_unknown_id(self, app_with_data):
+        client = app_with_data.test_client()
+        r = client.post("/api/detection/9999/correct", json={"modulation": "FSK"})
+        assert r.status_code == 404

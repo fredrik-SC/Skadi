@@ -60,7 +60,7 @@ Always consult these documents before starting work. Requirements are the source
 
 - FFT-based power spectral density for spectrum analysis (NumPy/SciPy)
 - Adaptive noise floor estimation for signal detection
-- Modulation classification approach for v1.0: energy-based and spectral feature extraction (not ML)
+- Modulation classification: v1.0 used deterministic energy/spectral feature extraction. **v2.0 (Phase E) adds an optional trained ML classifier** (scikit-learn RandomForest on the same engineered features) — the no-ML constraint below has been lifted by the owner. The deterministic classifier remains the offline fallback (default); the ML model is opt-in via `fingerprint.ml.enabled` and built locally with `python -m src.ml.train`
   - AM vs FM: envelope variance vs instantaneous frequency variance
   - FSK: discrete frequency states in instantaneous frequency
   - PSK: phase discontinuities
@@ -93,7 +93,7 @@ Defined in `config/threat_levels.yaml`. Five levels: CRITICAL, HIGH, MEDIUM, LOW
 ## What NOT To Do
 
 - Do not attempt dual-tuner mode in v1.0
-- Do not implement ML-based classification in v1.0
+- ML-based classification was out of scope for v1.0; it is now in scope for v2.0 (Phase E), but kept optional with the deterministic classifier as the offline fallback
 - Do not add GPS/location features in v1.0
 - Do not add direction finding in v1.0
 - Do not add map display in v1.0

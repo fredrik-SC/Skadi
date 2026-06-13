@@ -46,8 +46,9 @@ _DEFAULTS = {
     "fm_inst_freq_var_min": 5e-4,      # minimum inst-freq variance for FM/NFM
     # Phase-jump feature (advisory; not a gate)
     "phase_jump_thresh_rad": 1.0,
-    # Symbol-rate search band
-    "symbol_rate_min_hz": 20.0,
+    # Symbol-rate search band (floor 1 Hz so slow modes — RTTY 45, FT8 6.25,
+    # WSPR 1.46 baud — are reachable, not just fast ones)
+    "symbol_rate_min_hz": 1.0,
 }
 
 
@@ -63,11 +64,15 @@ class ModulationClassifier:
         self,
         min_snr_db: float = 8.0,
         config: dict[str, Any] | None = None,
+        model: "Any | None" = None,
     ) -> None:
         self._min_snr_db = min_snr_db
         self._thresholds = dict(_DEFAULTS)
         if config:
             self._thresholds.update(config)
+        # Optional trained model (MLModulationModel). When present it makes the
+        # decision; otherwise the deterministic _decide() is used (offline fallback).
+        self._model = model
 
     def classify(
         self,
@@ -91,7 +96,10 @@ class ModulationClassifier:
             return ModulationType.UNKNOWN, 0.0, ModulationFeatures(0, 0, 0, 0, 0, 0)
 
         features = self._compute_features(iq_data, sample_rate)
-        mod_type, confidence = self._decide(features, bandwidth_hz)
+        if self._model is not None:
+            mod_type, confidence = self._model.predict(features, bandwidth_hz)
+        else:
+            mod_type, confidence = self._decide(features, bandwidth_hz)
 
         logger.debug(
             "Modulation: %s (conf=%.2f) — env_cv=%.3f bimod=%.2f states=%d "
@@ -292,8 +300,12 @@ class ModulationClassifier:
             tr = tr - np.mean(tr)
             if len(tr) < 32:
                 continue
-            spec = np.abs(np.fft.rfft(tr))
-            freqs = np.fft.rfftfreq(len(tr), d=1.0 / sample_rate)
+            # Zero-pad to ~0.5 Hz bin spacing so slow bauds (down to ~1 Hz) are
+            # resolvable — a few-thousand-sample window at tens of kHz otherwise
+            # has bins far wider than the target rate.
+            nfft = min(1 << 16, max(len(tr), int(sample_rate / 0.5)))
+            spec = np.abs(np.fft.rfft(tr, n=nfft))
+            freqs = np.fft.rfftfreq(nfft, d=1.0 / sample_rate)
             band = (freqs >= fmin) & (freqs <= sample_rate / 4)
             if not band.any():
                 continue

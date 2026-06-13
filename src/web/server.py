@@ -217,6 +217,27 @@ def _register_routes(app: Flask) -> None:
             return jsonify({"error": "not found"}), 404
         return jsonify(dict(row))
 
+    @app.route("/api/detection/<int:detection_id>/correct", methods=["POST"])
+    def api_detection_correct(detection_id):
+        """Store an operator-corrected modulation label for a detection.
+
+        Feeds the active-learning loop: corrections become training rows on the
+        next `python -m src.ml.train` run.
+        """
+        from src.fingerprint.models import ModulationType
+        data = request.get_json(silent=True) or {}
+        mod = str(data.get("modulation", "")).strip().upper()
+        if mod not in {m.value for m in ModulationType}:
+            return jsonify({"error": "invalid modulation"}), 400
+        log = DetectionLog(Path(app.config["DETECTION_LOG_PATH"]))
+        try:
+            ok = log.set_correction(detection_id, mod)
+        finally:
+            log.close()
+        if not ok:
+            return jsonify({"error": "not found"}), 404
+        return jsonify({"status": "corrected", "id": detection_id, "modulation": mod})
+
 
 def _float_or_none(value: str | None) -> float | None:
     """Convert a string to float, returning None if invalid."""

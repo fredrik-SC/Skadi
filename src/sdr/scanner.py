@@ -315,7 +315,7 @@ class SpectrumScanner:
                         else:
                             threat_level = self._threat_mapper.default_level
 
-                    self._detection_log.log_signal(
+                    row_id = self._detection_log.log_signal(
                         signal,
                         modulation=fp.modulation.value if fp else None,
                         signal_type=matches[0].signal.name if matches else None,
@@ -328,6 +328,16 @@ class SpectrumScanner:
                         threat_level=threat_level,
                         acf_value=fp.acf_ms if fp else None,
                     )
+                    # Persist the feature vector so an operator correction on this
+                    # detection becomes a training row (active-learning loop).
+                    if fp is not None and row_id is not None:
+                        try:
+                            from src.ml.features import features_to_vector
+                            self._detection_log.store_features(
+                                row_id, list(features_to_vector(fp.features, fp.bandwidth_hz))
+                            )
+                        except Exception:  # noqa: BLE001 — logging features is best-effort
+                            pass
 
             all_signals.extend(signals)
 

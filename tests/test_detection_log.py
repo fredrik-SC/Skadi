@@ -158,3 +158,34 @@ class TestDetectionLog:
         log2 = DetectionLog(db_path)
         assert log2.count() == 1
         log2.close()
+
+
+class TestCorrections:
+    """Tests for the operator-correction columns (v2.0 active-learning loop)."""
+
+    def test_migration_idempotent(self, tmp_path):
+        from src.detectionlog.database import DetectionLog
+        p = tmp_path / "d.db"
+        DetectionLog(p).close()
+        # Re-opening runs the migrations again — must not raise.
+        log = DetectionLog(p)
+        cols = [r[1] for r in log._conn.execute("PRAGMA table_info(detections)").fetchall()]
+        assert "corrected_modulation" in cols
+        assert "feature_vector" in cols
+        log.close()
+
+    def test_set_and_query_correction(self, tmp_path):
+        from src.detectionlog.database import DetectionLog
+        from src.detection.models import DetectedSignal
+        log = DetectionLog(tmp_path / "d.db")
+        sig = DetectedSignal(100e6, 5000, -60, -65, 25, 1712400000.0, 100e6)
+        rid = log.log_signal(sig, modulation="OOK")
+        log.store_features(rid, [1.0, 2.0, 3.0])
+        assert log.set_correction(rid, "FSK") is True
+        assert log.set_correction(99999, "FSK") is False
+        corrections = log.query_corrections()
+        assert len(corrections) == 1
+        assert corrections[0]["corrected_modulation"] == "FSK"
+        import json
+        assert json.loads(corrections[0]["feature_vector"]) == [1.0, 2.0, 3.0]
+        log.close()

@@ -44,6 +44,15 @@ _CREATE_INDEXES_SQL = [
     "CREATE INDEX IF NOT EXISTS idx_detections_frequency ON detections(frequency_hz)",
 ]
 
+# v2.0 columns for the operator-feedback / active-learning loop. Applied
+# idempotently (SQLite has no ADD COLUMN IF NOT EXISTS — duplicate-column errors
+# are swallowed), so re-opening an existing DB is a no-op.
+_MIGRATIONS = [
+    "ALTER TABLE detections ADD COLUMN corrected_modulation TEXT",
+    "ALTER TABLE detections ADD COLUMN feature_vector TEXT",
+    "ALTER TABLE detections ADD COLUMN iq_path TEXT",
+]
+
 _INSERT_SQL = """
 INSERT INTO detections (
     timestamp_utc, frequency_hz, bandwidth_hz, modulation,
@@ -82,6 +91,11 @@ class DetectionLog:
             cursor.execute(_CREATE_TABLE_SQL)
             for index_sql in _CREATE_INDEXES_SQL:
                 cursor.execute(index_sql)
+            for migration in _MIGRATIONS:
+                try:
+                    cursor.execute(migration)
+                except sqlite3.OperationalError:
+                    pass  # column already exists
             self._conn.commit()
 
     def log_signal(
@@ -237,6 +251,45 @@ class DetectionLog:
         with self._lock:
             cursor = self._conn.cursor()
             cursor.execute(sql, params)
+            return [dict(row) for row in cursor.fetchall()]
+
+    def set_correction(self, detection_id: int, corrected_modulation: str) -> bool:
+        """Store an operator-corrected modulation for a detection.
+
+        Args:
+            detection_id: The detection row id.
+            corrected_modulation: The operator's corrected modulation label.
+
+        Returns:
+            True if a row was updated, False if the id was not found.
+        """
+        with self._lock:
+            cursor = self._conn.cursor()
+            cursor.execute(
+                "UPDATE detections SET corrected_modulation = ? WHERE id = ?",
+                (corrected_modulation, detection_id),
+            )
+            self._conn.commit()
+            return cursor.rowcount == 1
+
+    def store_features(self, detection_id: int, feature_vector: list[float]) -> None:
+        """Persist a detection's feature vector (JSON) for later retraining."""
+        import json
+        with self._lock:
+            cursor = self._conn.cursor()
+            cursor.execute(
+                "UPDATE detections SET feature_vector = ? WHERE id = ?",
+                (json.dumps(list(feature_vector)), detection_id),
+            )
+            self._conn.commit()
+
+    def query_corrections(self) -> list[dict[str, Any]]:
+        """Return detections that carry an operator correction."""
+        with self._lock:
+            cursor = self._conn.cursor()
+            cursor.execute(
+                "SELECT * FROM detections WHERE corrected_modulation IS NOT NULL"
+            )
             return [dict(row) for row in cursor.fetchall()]
 
     def count(self) -> int:

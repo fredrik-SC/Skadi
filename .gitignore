@@ -28,6 +28,10 @@ Thumbs.db
 # Data files (large / generated)
 data/*.db
 
+# Trained ML models + datasets (built locally from the gitignored corpus)
+data/*.joblib
+data/ml_dataset.npz
+
 # IQ sample captures
 data/iq_samples/
 

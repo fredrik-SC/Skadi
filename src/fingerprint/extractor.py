@@ -50,12 +50,33 @@ class FingerprintExtractor:
         self._classifier = ModulationClassifier(
             min_snr_db=float(cfg.get("min_snr_db", 8.0)),
             config=cfg.get("modulation"),
+            model=self._load_ml_model(cfg.get("ml") or {}),
         )
         self._acf = ACFComputer(
             min_lag_ms=float(cfg.get("acf_min_lag_ms", 1.0)),
             max_lag_ms=float(cfg.get("acf_max_lag_ms", 5000.0)),
             min_peak_strength=float(cfg.get("acf_min_peak_strength", 0.3)),
         )
+
+    @staticmethod
+    def _load_ml_model(ml_cfg: dict[str, Any]):
+        """Load the trained modulation model if enabled and present; else None.
+
+        Never raises: a missing or invalid model logs a warning and falls back
+        to the deterministic classifier (offline-safe).
+        """
+        if not ml_cfg.get("enabled"):
+            return None
+        from src.config import PROJECT_ROOT
+        model_path = PROJECT_ROOT / ml_cfg.get("model_path", "data/modulation_model.joblib")
+        try:
+            from src.ml.model import MLModulationModel, MLModelError
+            model = MLModulationModel.load(model_path)
+            logger.info("Loaded ML modulation model from %s", model_path)
+            return model
+        except Exception as e:  # noqa: BLE001 — never let a bad model break extraction
+            logger.warning("ML model unavailable (%s); using deterministic classifier", e)
+            return None
 
     def extract(
         self,

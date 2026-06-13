@@ -126,6 +126,11 @@ fingerprint:
     psk_order1_max: 0.50           # order-1 must be low (two opposite levels)
     wideband_fm_min_bw_hz: 50000
     fm_inst_freq_var_min: 0.0005
+  # Trained ML modulation classifier (v2.0). Off by default -> deterministic
+  # classifier is used. Build the model with `python -m src.ml.train --build`.
+  ml:
+    enabled: false
+    model_path: data/modulation_model.joblib
 
 classification:
   # Bandwidth matching tolerance (fraction, e.g. 0.15 = +/- 15%)

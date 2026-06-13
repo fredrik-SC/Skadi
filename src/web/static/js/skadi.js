@@ -191,6 +191,22 @@
             html += detailRow('Alt 2 Conf', (det.alt_match_2_confidence * 100).toFixed(0) + '%');
         }
 
+        // Operator correction (feeds the active-learning loop)
+        html += '<div class="detail-section-title">Operator Correction</div>';
+        var mods = ['AM', 'FM', 'NFM', 'FSK', 'PSK', 'OOK', 'UNKNOWN'];
+        var current = det.corrected_modulation || '';
+        var opts = '<option value="">— pick —</option>';
+        for (var i = 0; i < mods.length; i++) {
+            opts += '<option value="' + mods[i] + '"' +
+                (current === mods[i] ? ' selected' : '') + '>' + mods[i] + '</option>';
+        }
+        html += '<div class="detail-row"><span class="detail-label">Correct modulation</span>' +
+            '<span class="detail-value"><select id="correct-mod">' + opts + '</select> ' +
+            '<button id="correct-save" data-id="' + det.id + '">Save</button></span></div>';
+        if (det.corrected_modulation) {
+            html += detailRow('Corrected to', det.corrected_modulation);
+        }
+
         // Threat
         html += '<div class="detail-section-title">Assessment</div>';
         html += detailRow('Threat Level', det.threat_level || 'MEDIUM');
@@ -204,6 +220,22 @@
         }
 
         document.getElementById('detail-content').innerHTML = html;
+        var saveBtn = document.getElementById('correct-save');
+        if (saveBtn) {
+            saveBtn.onclick = function() { submitCorrection(this.getAttribute('data-id')); };
+        }
+    }
+
+    function submitCorrection(id) {
+        var sel = document.getElementById('correct-mod');
+        var mod = sel ? sel.value : '';
+        if (!mod) { return; }
+        fetch('/api/detection/' + id + '/correct', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ modulation: mod })
+        }).then(function(r) { return r.json(); })
+          .then(function() { showDetail(id); loadHistory(); });
     }
 
     function detailRow(label, value) {
