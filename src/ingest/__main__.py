@@ -60,6 +60,8 @@ def main() -> int:
                         help="Centre frequency of the first step (default: 14e6)")
     parser.add_argument("--label-map", type=Path, default=None,
                         help="YAML of {stem: {modulation, signal_type, freq_hz}} overrides")
+    parser.add_argument("--max-seconds", type=float, default=None,
+                        help="Truncate each clip to this many seconds (default: full)")
     parser.add_argument("--seed", type=int, default=0, help="RNG seed for noise")
     parser.add_argument("--log-level", default="INFO",
                         choices=["DEBUG", "INFO", "WARNING", "ERROR"])
@@ -86,6 +88,7 @@ def main() -> int:
         base_freq_hz=args.base_freq,
         offset_hz=args.offset,
         snr_db=args.snr,
+        max_seconds=args.max_seconds,
         label_map=label_map,
         seed=args.seed,
     )

@@ -151,6 +151,7 @@ def build_session(
     snr_db: float = 25.0,
     fft_size: int = 8192,
     fft_averages: int = 10,
+    max_seconds: float | None = None,
     label_map: dict[str, dict] | None = None,
     seed: int = 0,
 ) -> dict:
@@ -201,6 +202,8 @@ def build_session(
         override = label_map.get(stem, {})
         try:
             audio, sr_audio = load_audio(path)
+            if max_seconds is not None:
+                audio = audio[:int(max_seconds * sr_audio)]
             iq, _ = audio_to_iq(audio, sr_audio, target_rate)
             step_iq = embed_in_step(iq, target_rate, offset_hz, snr_db, rng, min_samples)
         except Exception as e:  # noqa: BLE001 — report and continue the batch
