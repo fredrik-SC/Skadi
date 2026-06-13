@@ -112,6 +112,20 @@ fingerprint:
   acf_max_lag_ms: 5000.0
   # ACF minimum peak strength to report (0.0-1.0)
   acf_min_peak_strength: 0.3
+  # Modulation classifier thresholds (feature-led decision). Omit to use the
+  # in-code defaults; override here to tune against a benchmark corpus.
+  modulation:
+    env_cv_threshold: 0.25         # above -> amplitude-modulated (AM/OOK)
+    ook_bimodality: 0.80           # above -> OOK vs AM
+    freq_state_fit: 0.85           # R^2 of a 2-level inst-freq model (FSK)
+    freq_state_flat: 0.50          # plateau fraction (FSK held states)
+    freq_state_min_share: 0.12
+    freq_state_gap_frac: 0.30
+    medfilt_window: 11
+    psk_concentration: 0.60        # order-2 phase moment (PSK)
+    psk_order1_max: 0.50           # order-1 must be low (two opposite levels)
+    wideband_fm_min_bw_hz: 50000
+    fm_inst_freq_var_min: 0.0005
 
 classification:
   # Bandwidth matching tolerance (fraction, e.g. 0.15 = +/- 15%)

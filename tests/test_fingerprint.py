@@ -114,8 +114,9 @@ class TestModulationClassifier:
             symbol_rate=1200, freq_shift=1000,
         )
         classifier = ModulationClassifier()
-        mod, conf, _ = classifier.classify(iq, 50_000, snr_db=25.0, bandwidth_hz=5_000)
-        assert mod in (ModulationType.FSK, ModulationType.UNKNOWN)  # FSK detection can be tricky
+        mod, conf, feats = classifier.classify(iq, 50_000, snr_db=25.0, bandwidth_hz=5_000)
+        assert mod == ModulationType.FSK
+        assert feats.num_freq_states_robust >= 2
 
     def test_psk_signal(self):
         """BPSK classified as PSK."""
@@ -124,8 +125,43 @@ class TestModulationClassifier:
             symbol_rate=2400,
         )
         classifier = ModulationClassifier()
-        mod, conf, _ = classifier.classify(iq, 50_000, snr_db=25.0, bandwidth_hz=5_000)
-        assert mod in (ModulationType.PSK, ModulationType.UNKNOWN)  # Accept UNKNOWN as valid
+        mod, conf, feats = classifier.classify(iq, 50_000, snr_db=25.0, bandwidth_hz=5_000)
+        assert mod == ModulationType.PSK
+        # Two opposite phase levels: order-2 high, order-1 low.
+        assert feats.phase_level_concentration > 0.6
+        assert feats.phase_single_concentration < 0.5
+
+    def test_ook_signal(self):
+        """OOK classified as OOK (two-level on/off envelope)."""
+        iq = generate_ook_signal(sample_rate=50_000, num_samples=50_000, symbol_rate=300)
+        classifier = ModulationClassifier()
+        mod, _, feats = classifier.classify(iq, 50_000, snr_db=25.0, bandwidth_hz=3_000)
+        assert mod == ModulationType.OOK
+        assert feats.envelope_bimodality > 0.8
+
+    def test_symbol_rate_estimate(self):
+        """Symbol-rate estimate lands near the true baud for FSK and PSK."""
+        classifier = ModulationClassifier()
+        fsk = generate_fsk_signal(sample_rate=50_000, num_samples=50_000,
+                                  symbol_rate=1200, freq_shift=1000)
+        _, _, ff = classifier.classify(fsk, 50_000, snr_db=25.0, bandwidth_hz=5_000)
+        psk = generate_psk_signal(sample_rate=50_000, num_samples=50_000, symbol_rate=2400)
+        _, _, pf = classifier.classify(psk, 50_000, snr_db=25.0, bandwidth_hz=5_000)
+        # Advisory: accept the rate or a low harmonic (within 2.2x), non-zero.
+        assert pf.symbol_rate_hz > 0
+        assert 0.8 <= pf.symbol_rate_hz / 2400 <= 2.2
+        assert ff.symbol_rate_hz > 0
+
+    def test_modality_measure(self):
+        """The robust freq-state measure reports 2 states for FSK, 1 for FM."""
+        classifier = ModulationClassifier()
+        fsk = generate_fsk_signal(sample_rate=50_000, num_samples=50_000,
+                                  symbol_rate=1200, freq_shift=1000)
+        n_fsk, sep, _ = classifier._freq_state_analysis(fsk, 50_000)
+        fm = generate_fm_signal(sample_rate=50_000, num_samples=50_000, deviation=2_500)
+        n_fm, _, _ = classifier._freq_state_analysis(fm, 50_000)
+        assert n_fsk == 2
+        assert n_fm == 1
 
     def test_low_snr_returns_unknown(self):
         """Low SNR signal returns UNKNOWN."""
