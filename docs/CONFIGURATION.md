@@ -74,9 +74,60 @@ stored raw, so recordings can be reprocessed as these settings change.
 | `fingerprint.min_snr_db` | `8.0` | Minimum SNR for modulation classification |
 | `fingerprint.guard_factor` | `3.0` | Filter bandwidth multiplier for isolation |
 | `fingerprint.filter_numtaps` | `101` | Minimum FIR filter taps (auto-scaled for narrowband) |
+| `fingerprint.min_filter_bw_hz` | `500` | Floor for the isolation filter bandwidth (Hz) |
 | `fingerprint.acf_min_lag_ms` | `1.0` | ACF search range minimum (ms) |
 | `fingerprint.acf_max_lag_ms` | `5000.0` | ACF search range maximum (ms) |
 | `fingerprint.acf_min_peak_strength` | `0.3` | Minimum ACF peak to report |
+
+### Modulation Classifier Thresholds (`fingerprint.modulation.*`)
+
+Feature-led decision thresholds for the deterministic classifier. Omit the block to
+use the in-code defaults; override to tune against the benchmark corpus.
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `env_cv_threshold` | `0.25` | Envelope CV above this → amplitude-modulated (AM/OOK) |
+| `ook_bimodality` | `0.80` | Envelope bimodality above this → OOK vs AM |
+| `freq_state_fit` | `0.85` | R² of a 2-level instantaneous-frequency model (FSK) |
+| `freq_state_flat` | `0.50` | Plateau (held-state) fraction for FSK |
+| `freq_state_min_share` | `0.12` | Minimum sample share in each frequency state |
+| `freq_state_gap_frac` | `0.30` | State gap as a fraction of inst-freq spread |
+| `medfilt_window` | `11` | Median-filter window (odd) for inst-freq smoothing |
+| `psk_concentration` | `0.60` | Order-2 phase moment above this → PSK |
+| `psk_order1_max` | `0.50` | Order-1 phase moment must be below this for PSK |
+| `wideband_fm_min_bw_hz` | `50000` | Bandwidth above this qualifies as wideband FM |
+| `fm_inst_freq_var_min` | `0.0005` | Minimum inst-freq variance for FM/NFM |
+
+**Analog-AM hybrid gate** (applied only when an ML model is loaded — see below). Routes
+the unambiguous analog-AM-voice signature back to AM before deferring to the model,
+which has too little real AM to match the deterministic envelope cue. Tuned on real
+airband voice (caught 15/16 AM with 1 digital false-positive in the A/B).
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `am_gate_env_cv_min` | `0.45` | Lower envelope-CV bound (strong speech variation) |
+| `am_gate_env_cv_max` | `0.65` | Upper envelope-CV bound (excludes OOK/noisy-digital) |
+| `am_gate_order2_max` | `0.13` | Max order-2 phase concentration (excludes PSK) |
+| `am_gate_order1_max` | `0.12` | Max order-1 phase concentration (excludes carrier-PSK) |
+| `am_gate_if_var_min` | `0.05` | Min residual inst-freq variance (excludes FM ≈ 0) |
+
+### ML Classifier (`fingerprint.ml.*`) — v2.0
+
+Optional trained RandomForest modulation classifier. **Off by default** — the
+deterministic classifier is used. When enabled and a model is loaded, the classifier
+runs hybrid: the analog-AM gate above keeps AM voice on the deterministic path; all
+other signals are decided by the model.
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `fingerprint.ml.enabled` | `false` | Enable the trained model (falls back to deterministic if the file is missing/invalid) |
+| `fingerprint.ml.model_path` | `data/modulation_model.joblib` | Path to the locally-built model bundle |
+
+Build the model locally (it is gitignored, not shipped):
+
+```
+python -m src.ml.train --build --sessions-dir sessions --out data/modulation_model.joblib
+```
 
 ### Classification Settings
 

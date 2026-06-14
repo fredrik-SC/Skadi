@@ -6,15 +6,43 @@ Skaði is a standalone, offline RF signal identification tool. It scans the radi
 
 This is a proof-of-concept/bench test that must be architected for future integration with SEIARA (an intelligence platform with React frontend, Python/Docker backend, Neo4j, Qdrant, and AI capabilities). Integration will be via SEIARA polling Skaði's SQLite detection log.
 
-## Project Status: v1.0 Milestone (7 April 2026)
+## Project Status: v2.0 — Measurement-driven classifier (June 2026)
 
-All 10 planned development sessions are complete. The system is operational as a bench test. See docs/OPERATIONS.md for usage and docs/SEIARA_INTEGRATION.md for the polling interface.
+v1.0 (7 April 2026) delivered the full bench-test pipeline across all 10 planned
+sessions. v2.0 is a measurement-driven evolution of the modulation classifier,
+built and verified against **real over-the-air captures** rather than synthetic
+signals. Phases:
 
-**Known v1.0 limitations:**
-- SoapySDRPlay3 C++ plugin crashes on shutdown (cosmetic — data is saved)
-- Classification accuracy ~60% for real-world narrowband signals
-- Python 3.14 required (SoapySDR homebrew bindings not available for 3.13)
-- Linux deployment untested (Dockerfile exists but not verified)
+- **A — Record/replay.** SigMF IQ recording + `ReplaySource` (a drop-in offline SDR
+  source). The whole detect→fingerprint→classify chain is now deterministically
+  testable offline, and a labelled corpus of real captures can be built (see
+  docs/CAPTURE_PROTOCOL.md).
+- **B — Benchmark.** A scored A/B harness over the corpus (station recall,
+  fragmentation, spurious rate, modulation confusion matrix).
+- **C — Bandwidth + band-plan.** ITU-R SM.443 occupied-bandwidth (99%-power) and a
+  band-plan classification prior.
+- **D — Feature-led classifier.** Deterministic modulation decision keyed on
+  modulation physics (envelope CV/bimodality, robust frequency-state fit, order-1/2
+  phase concentration, advisory symbol rate).
+- **E — ML + hybrid + feedback loop.** An optional trained RandomForest classifier
+  (opt-in) on the same engineered features, a **hybrid analog-AM gate** that keeps
+  AM voice on the deterministic path, and an **operator-feedback loop** (correct a
+  detection in the GUI → stored with its feature vector → folds into the next
+  retrain).
+
+**Measured modulation accuracy (94 real OTA signals, A/B):** deterministic 35/94,
+pure-ML 49/94, **hybrid 64/94** (AM 16/16, FM 11/11, FSK 27/52, PSK 10/13). The
+hybrid is the current architecture — see the [[hybrid-classifier]] note and
+`src/fingerprint/modulation.py`.
+
+**Known limitations:**
+- SoapySDRPlay3 C++ plugin crashes on shutdown — mitigated by `fast_shutdown`
+  (`os._exit` skips the crashing ReleaseDevice path; data is saved).
+- FSK still 27/52 — real D-STAR/FT8 captures flip FSK→PSK after PSK was added to the
+  corpus. The fix is more real FSK data, not threshold tuning.
+- The trained ML model (`data/modulation_model.joblib`) is **built locally** and
+  gitignored; the deterministic classifier is the default offline fallback.
+- Linux deployment untested (Dockerfile exists but not verified).
 
 ## Key Documents
 

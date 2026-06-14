@@ -102,6 +102,43 @@ DC spike); capture-quality cleanups are applied at processing time, so the same
 recording can be reprocessed as those settings improve. See the `capture:` section
 in `docs/CONFIGURATION.md` for DC removal, edge guard, and post-retune flush.
 
+### Modulation Classifier: ML + Hybrid (v2.0)
+
+By default the modulation classifier is the deterministic, feature-led path — no
+model needed, fully offline. v2.0 adds an **optional trained RandomForest** that
+improves digital-mode (FSK/PSK) and FM classification, run in a **hybrid** mode that
+keeps analog AM voice on the deterministic path (where the trained model regresses).
+
+Build the model locally from the capture corpus (it is gitignored — never shipped):
+
+```bash
+python -m src.ml.train --build --sessions-dir sessions \
+    --out data/modulation_model.joblib
+```
+
+This rebuilds the dataset (synthetic sweeps + real captures + OGG + operator
+corrections) and prints a held-out accuracy and modulation confusion matrix. Enable
+it in `config/default.yaml`:
+
+```yaml
+fingerprint:
+  ml:
+    enabled: true
+    model_path: data/modulation_model.joblib
+```
+
+If the model file is missing or invalid, the system logs a warning and falls back to
+the deterministic classifier — it never fails to start. See `docs/CONFIGURATION.md`
+for the hybrid AM-gate thresholds.
+
+### Operator Feedback Loop (v2.0)
+
+When a detection's modulation looks wrong, correct it in the web dashboard's detail
+panel (modulation dropdown → Save). The correction is stored against the detection
+with its engineered feature vector and folds into the next `python -m src.ml.train`
+run, so the model improves from real operational use. Corrected rows are queryable in
+`data/detections.db` (`corrected_modulation`, `feature_vector`).
+
 ### Web Dashboard
 
 The dashboard runs at `http://127.0.0.1:8050` and shows:
