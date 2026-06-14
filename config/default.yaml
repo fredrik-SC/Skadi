@@ -126,6 +126,15 @@ fingerprint:
     psk_order1_max: 0.50           # order-1 must be low (two opposite levels)
     wideband_fm_min_bw_hz: 50000
     fm_inst_freq_var_min: 0.0005
+    # Analog-AM override gate (hybrid mode: applied only when an ML model is
+    # loaded). Routes the unambiguous analog-AM-voice signature back to AM
+    # before deferring to the model, which has too little real AM to match the
+    # deterministic envelope cue. Tuned on real airband voice.
+    am_gate_env_cv_min: 0.45
+    am_gate_env_cv_max: 0.65
+    am_gate_order2_max: 0.13
+    am_gate_order1_max: 0.12
+    am_gate_if_var_min: 0.05
   # Trained ML modulation classifier (v2.0). Off by default -> deterministic
   # classifier is used. Build the model with `python -m src.ml.train --build`.
   ml:

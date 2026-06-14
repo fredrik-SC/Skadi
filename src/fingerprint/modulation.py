@@ -49,6 +49,18 @@ _DEFAULTS = {
     # Symbol-rate search band (floor 1 Hz so slow modes — RTTY 45, FT8 6.25,
     # WSPR 1.46 baud — are reachable, not just fast ones)
     "symbol_rate_min_hz": 1.0,
+    # Analog-AM override gate (hybrid mode only — see _looks_like_analog_am).
+    # When a trained model is present it owns digital/FM, but it cannot match the
+    # deterministic envelope cue on real AM *voice* (measured: ML 1/16 vs
+    # deterministic 15/16). This gate routes the unambiguous analog-AM signature
+    # — strong continuous envelope variation, no phase structure, no frequency
+    # states — back to AM before deferring to the model. Tuned on real airband
+    # voice (15/16 AM caught, 1 digital stolen).
+    "am_gate_env_cv_min": 0.45,        # strong envelope variation (speech)
+    "am_gate_env_cv_max": 0.65,        # but not OOK/noisy-digital extremes
+    "am_gate_order2_max": 0.13,        # no order-2 phase concentration (not PSK)
+    "am_gate_order1_max": 0.12,        # no single phase level (not carrier-PSK)
+    "am_gate_if_var_min": 0.05,        # residual inst-freq spread (not FM's ~0)
 }
 
 
@@ -97,7 +109,17 @@ class ModulationClassifier:
 
         features = self._compute_features(iq_data, sample_rate)
         if self._model is not None:
-            mod_type, confidence = self._model.predict(features, bandwidth_hz)
+            # Hybrid: the model owns digital modes and FM, but real AM voice is
+            # the deterministic envelope cue's domain (the model has too little
+            # real AM to generalise). Route an unambiguous analog-AM signature to
+            # AM first; defer everything else to the model.
+            if self._looks_like_analog_am(features):
+                mod_type, confidence = (
+                    ModulationType.AM,
+                    _clip(0.5 + min(features.envelope_cv, 0.5)),
+                )
+            else:
+                mod_type, confidence = self._model.predict(features, bandwidth_hz)
         else:
             mod_type, confidence = self._decide(features, bandwidth_hz)
 
@@ -186,6 +208,25 @@ class ModulationClassifier:
             return ModulationType.NFM, _clip(0.4 + 5.0 * f.inst_freq_variance)
 
         return ModulationType.UNKNOWN, 0.0
+
+    def _looks_like_analog_am(self, f: ModulationFeatures) -> bool:
+        """Unambiguous analog-AM-voice signature (hybrid override of the model).
+
+        Real AM voice carries strong, continuous envelope variation but no
+        digital structure: no order-1/order-2 phase concentration (rules out
+        PSK and residual-carrier), no sustained frequency states (rules out
+        FSK), and a non-zero residual instantaneous-frequency spread (rules out
+        FM, whose inst-freq variance is ~0 after isolation). The envelope-CV
+        window keeps OOK and noisy-digital extremes out. See the gate defaults.
+        """
+        th = self._thresholds
+        return (
+            th["am_gate_env_cv_min"] < f.envelope_cv < th["am_gate_env_cv_max"]
+            and f.phase_level_concentration < th["am_gate_order2_max"]
+            and f.phase_single_concentration < th["am_gate_order1_max"]
+            and f.inst_freq_variance > th["am_gate_if_var_min"]
+            and f.num_freq_states_robust < 2
+        )
 
     # --- structural features (Phase D) -------------------------------------
 
