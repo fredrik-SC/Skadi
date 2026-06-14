@@ -28,8 +28,17 @@ Thumbs.db
 # Data files (large / generated)
 data/*.db
 
+# Trained ML models + datasets (built locally from the gitignored corpus)
+data/*.joblib
+data/ml_dataset.npz
+
 # IQ sample captures
 data/iq_samples/
+
+# Recorded replay sessions (large binary IQ corpus)
+sessions/
+*.sigmf-data
+*.sigmf-meta
 
 # Matplotlib output (keep project logo and web assets)
 *.png

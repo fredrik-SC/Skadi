@@ -1,9 +1,17 @@
 # Project Skaði -- Product Requirements Document
 
-**Version:** 1.0
-**Date:** 6 April 2026
+**Version:** 2.0
+**Date:** 14 June 2026
 **Author:** Fredrik (SiniusCube Consulting)
-**Status:** Draft
+**Status:** v1.0 delivered (7 Apr 2026); v2.0 measurement-driven classifier in progress
+
+> **v2.0 note.** v1.0 delivered the full offline pipeline. v2.0 evolves the
+> modulation classifier using real over-the-air captures: a record/replay corpus,
+> a scored benchmark, occupied-bandwidth + band-plan priors, a feature-led
+> deterministic classifier, and an **optional trained ML classifier with a hybrid
+> analog-AM gate and an operator-feedback loop**. The no-ML-for-v1.0 constraint is
+> lifted; the deterministic classifier remains the offline default. See Section 7.1
+> for v2.0 delivered capabilities.
 
 ---
 
@@ -111,10 +119,12 @@ Skaði is designed as a standalone tool, independent of SEIARA (SiniusCube's int
 |----|-------------|----------|
 | FR-FP-01 | The system shall extract centre frequency from each detected signal | Must |
 | FR-FP-02 | The system shall estimate signal bandwidth | Must |
-| FR-FP-03 | The system shall identify modulation type (AM, FM, FSK, PSK, etc.) | Must |
+| FR-FP-03 | The system shall identify modulation type (AM, FM, NFM, FSK, PSK, OOK) | Must |
 | FR-FP-04 | The system shall estimate baud rate for digital signals where detectable | Should |
 | FR-FP-05 | The system shall compute ACF (autocorrelation function) values | Should |
 | FR-FP-06 | The system shall capture a short IQ sample for each detected signal for logging | Should |
+| FR-FP-07 | The modulation classifier shall support an optional trained ML model, with the deterministic classifier as the offline default (v2.0) | Should |
+| FR-FP-08 | When the ML model is active, an analog-AM gate shall keep unambiguous AM voice on the deterministic path (hybrid) (v2.0) | Should |
 
 ### 3.4 Signal Classification
 
@@ -171,7 +181,12 @@ Skaði is designed as a standalone tool, independent of SEIARA (SiniusCube's int
 | latitude | REAL | Receiver latitude (future, GPS integration) | v2.0 |
 | longitude | REAL | Receiver longitude (future, GPS integration) | v2.0 |
 | mgrs | TEXT | MGRS grid reference (future, GPS integration) | v2.0 |
-| iq_sample_path | TEXT | Path to stored IQ sample file | v2.0 |
+| iq_path | TEXT | Path to stored IQ sample file | v2.0 |
+| corrected_modulation | TEXT | Operator-corrected modulation type (feedback loop) | v2.0 |
+| feature_vector | TEXT (JSON) | Engineered modulation feature vector at log time, for ML retraining | v2.0 |
+
+v2.0 columns are added by idempotent `ALTER TABLE` migrations
+(`src/detectionlog/database.py`), so existing v1.0 logs upgrade in place.
 
 ### 3.7 User Interface
 
@@ -288,13 +303,62 @@ These are documented for architectural consideration but are not part of the ini
 5. **Waterfall display** -- Real-time spectral waterfall in the browser GUI, with zoom capability.
 6. **Dual-tuner operation** -- One tuner scanning/classifying, one tuner providing waterfall view of a 10MHz slice (noting the 2MHz-per-tuner limitation in dual mode).
 7. **SEIARA integration** -- Polling-based data pipeline from Skaði's detection log. The example polling script exists; the SEIARA-side consumer needs to be built.
-8. **ML-based classification** -- Neural network or ML model trained on Artemis audio samples and waterfall patterns for improved matching beyond parametric comparison.
-9. **Improve classification accuracy** -- The v1.0 parametric classifier achieves ~60% accuracy on real-world narrowband signals. Improvements needed: better feature extraction for FSK/PSK discrimination, training feedback loop where operators can correct misclassifications, and potentially ML-based approaches using collected IQ samples.
-10. **Native SDRPlay API** -- Bypass SoapySDR and use the SDRPlay API 3.x directly to eliminate the SoapySDRPlay3 C++ plugin shutdown crashes and improve hardware stability during sustained operation.
+8. **ML-based classification** -- ✅ **Partially delivered in v2.0** (see 7.1): a
+   trained RandomForest on engineered modulation features. Audio/waterfall-pattern
+   models remain future work.
+9. **Improve classification accuracy** -- 🔄 **In progress (v2.0).** The feature-led
+   + hybrid-ML classifier reaches 64/94 on real OTA signals (vs the v1.0 parametric
+   path). FSK discrimination and a training-feedback loop are delivered; broader
+   accuracy depends on collecting more real captures.
+10. **Native SDRPlay API** -- Bypass SoapySDR and use the SDRPlay API 3.x directly to eliminate the SoapySDRPlay3 C++ plugin shutdown crashes and improve hardware stability during sustained operation. (v2.0 mitigates the crash via `fast_shutdown`.)
 11. **Extended field testing** -- Run the system for hours/days in a real operational environment, collect operator feedback, and identify detection gaps against real military signals. This should drive classification tuning priorities.
-12. **Operator feedback loop** -- Allow operators to correct signal classifications via the web GUI (e.g., "this is actually X, not Y"). Store corrections and use them to tune classifier thresholds or train ML models.
+12. **Operator feedback loop** -- ✅ **Delivered in v2.0** (see 7.1): operators correct
+    classifications in the web GUI; corrections are stored with the signal's feature
+    vector and fold into the next ML retrain.
 
 ---
+
+### 7.1 v2.0 Delivered Capabilities
+
+The v2.0 work stream is measurement-driven: every change is validated against a
+corpus of real over-the-air captures via a scored benchmark, not synthetic signals.
+
+1. **Record/replay corpus (Phase A).** SigMF IQ recording and a file-backed
+   `ReplaySource` that replays a recorded sweep through the identical pipeline. This
+   makes the whole chain deterministically testable offline and is the foundation
+   for a labelled corpus. Capture procedure: docs/CAPTURE_PROTOCOL.md.
+2. **Benchmark harness (Phase B).** Scores a replayed corpus against ground truth:
+   station recall, fragmentation factor, spurious rate, and a modulation confusion
+   matrix — so classifier changes are A/B-comparable.
+3. **Occupied bandwidth + band-plan prior (Phase C).** ITU-R SM.443 99%-power
+   occupied bandwidth, plus a band-plan prior that informs (does not veto)
+   classification and flags signals unexpected for their band.
+4. **Feature-led deterministic classifier (Phase D).** Modulation decision keyed on
+   physics: envelope CV/bimodality (AM/OOK), median-filtered instantaneous-frequency
+   state fit (FSK), order-1/order-2 phase concentration (PSK vs AM), and an advisory
+   symbol-rate estimate.
+5. **Optional ML classifier (Phase E).** A scikit-learn RandomForest on the same
+   engineered features (`src/ml/`), opt-in via `fingerprint.ml.enabled`, built
+   locally with `python -m src.ml.train`. The deterministic classifier is the
+   default offline fallback; the model bundle validates its feature names on load
+   and fails closed to deterministic on mismatch.
+6. **Hybrid analog-AM gate (Phase E).** Measurement showed pure-ML regresses AM
+   voice (airband 1/16) while winning digital modes, and deterministic is the
+   reverse. The hybrid routes an unambiguous analog-AM signature to AM before
+   deferring to the model, giving the best of both: **64/94 on real signals**
+   (AM 16/16, FM 11/11, FSK 27/52, PSK 10/13) vs deterministic 35/94 and pure-ML
+   49/94.
+7. **Operator-feedback / active-learning loop (Phase E).** The web GUI lets an
+   operator correct a detection's modulation; the correction is stored with the
+   signal's engineered feature vector (`corrected_modulation`, `feature_vector`)
+   and folds into the next `train` run, so the dataset compounds over operational
+   use.
+
+**Honest status.** This proves the classifier *can* fit real signals where the
+deterministic path cannot, and the hybrid is strictly better than either baseline.
+Broad generalisation is still data-limited (e.g. FSK 27/52; real D-STAR/FT8 destabilise
+toward PSK) — the remedy is more real captures + the feedback loop, by design, not
+further threshold tuning.
 
 ## 8. Development Methodology
 
@@ -308,3 +372,4 @@ This project follows Specification Driven Development. This PRD and the accompan
 |---------|------|--------|---------|
 | 1.0 | 6 April 2026 | Fredrik | Initial draft |
 | 1.0.1 | 7 April 2026 | Fredrik / Claude | v1.0 implementation complete. All 10 sessions delivered: SDR interface, spectrum scanner, adaptive detection with hierarchical subcomponent merge, fingerprint extraction (modulation/bandwidth/ACF), Artemis DB classification (432 signals), threat assessment, SQLite detection log, browser dashboard with real-time WebSocket alerts, scan presets (HF/VHF/UHF/airband/military_hf), SEIARA polling integration, documentation. 143 tests passing. Known limitations: SoapySDRPlay3 shutdown crash, ~60% classification accuracy on narrowband signals, Python 3.14 required. |
+| 2.0 | 14 June 2026 | Fredrik / Claude | Measurement-driven classifier evolution (Phases A–E). Record/replay corpus + SigMF, scored benchmark harness, ITU-R SM.443 occupied bandwidth + band-plan prior, feature-led deterministic classifier, optional RandomForest ML classifier (opt-in, deterministic fallback), hybrid analog-AM gate, and operator-feedback/active-learning loop. Detection-log v2.0 columns (`iq_path`, `corrected_modulation`, `feature_vector`) via idempotent migrations. Real-OTA modulation accuracy: hybrid 64/94 (vs deterministic 35/94, pure-ML 49/94). 252 tests passing. No-ML-for-v1.0 constraint lifted. |

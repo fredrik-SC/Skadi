@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from src.classification.artemis_db import ArtemisDB, ArtemisSignal
+from src.classification.bandplan import BandEntry, BandPlan
 from src.classification.confidence import compute_confidence
 from src.fingerprint.models import ModulationType, SignalFingerprint
 
@@ -55,6 +56,8 @@ class ClassificationMatch:
     bandwidth_score: float
     frequency_score: float
     acf_score: float
+    band_consistency_factor: float = 1.0
+    unexpected_for_band: bool = False
 
 
 @dataclass
@@ -64,10 +67,13 @@ class ClassificationResult:
     Attributes:
         matches: Up to max_matches ranked matches, sorted by confidence.
         fingerprint: The input fingerprint that was classified.
+        band_service: Service the detected frequency belongs to per the band
+            plan (e.g. "Aeronautical Mobile"), or None if no band plan / no match.
     """
 
     matches: list[ClassificationMatch]
     fingerprint: SignalFingerprint
+    band_service: str | None = None
 
 
 class SignalClassifier:
@@ -86,12 +92,18 @@ class SignalClassifier:
         self,
         artemis_db: ArtemisDB,
         config: dict[str, Any] | None = None,
+        band_plan: "BandPlan | None" = None,
     ) -> None:
         cfg = config or {}
         self._db = artemis_db
         self._bandwidth_tolerance = float(cfg.get("bandwidth_tolerance", 0.15))
         self._max_matches = int(cfg.get("max_matches", 3))
         self._min_confidence = float(cfg.get("min_confidence", 0.1))
+        self._band_plan = band_plan
+        # Bounded multiplicative prior: boost band-consistent candidates, mildly
+        # (never zero) down-rank inconsistent ones. Informs, never vetoes.
+        self._band_boost = float(cfg.get("band_boost_factor", 1.15))
+        self._band_penalty = float(cfg.get("band_penalty_factor", 0.85))
 
     def classify(self, fingerprint: SignalFingerprint) -> ClassificationResult:
         """Classify a signal fingerprint against the Artemis database.
@@ -118,6 +130,13 @@ class SignalClassifier:
                 freq_hz=fingerprint.signal.centre_freq_hz,
             )
 
+        # Band-plan context for the detected frequency (a prior, not a filter).
+        band = (
+            self._band_plan.lookup(fingerprint.signal.centre_freq_hz)
+            if self._band_plan is not None else None
+        )
+        band_service = band.service if band is not None else None
+
         # Score each candidate
         matches: list[ClassificationMatch] = []
         for candidate in candidates:
@@ -125,14 +144,19 @@ class SignalClassifier:
                 fingerprint, candidate, mod_terms, self._bandwidth_tolerance,
             )
 
-            if total >= self._min_confidence:
+            factor, unexpected = self._band_factor(band, candidate)
+            adjusted = max(0.0, min(1.0, total * factor))
+
+            if adjusted >= self._min_confidence:
                 matches.append(ClassificationMatch(
                     signal=candidate,
-                    confidence=total,
+                    confidence=adjusted,
                     modulation_score=mod_s,
                     bandwidth_score=bw_s,
                     frequency_score=freq_s,
                     acf_score=acf_s,
+                    band_consistency_factor=factor,
+                    unexpected_for_band=unexpected,
                 ))
 
         # Sort by confidence descending, limit to max_matches
@@ -152,4 +176,23 @@ class SignalClassifier:
                 fingerprint.modulation.value, fingerprint.bandwidth_hz,
             )
 
-        return ClassificationResult(matches=matches, fingerprint=fingerprint)
+        return ClassificationResult(
+            matches=matches, fingerprint=fingerprint, band_service=band_service,
+        )
+
+    def _band_factor(
+        self, band: "BandEntry | None", candidate: ArtemisSignal
+    ) -> tuple[float, bool]:
+        """Band-plan consistency factor for a candidate.
+
+        Returns (factor, unexpected_for_band). A candidate whose modulation is
+        expected in the band gets a mild boost; one that is not gets a mild
+        (never-zero) penalty and is flagged unexpected. No band match -> neutral.
+        """
+        if band is None or not band.expected_modulations:
+            return 1.0, False
+        expected = {m.upper() for m in band.expected_modulations}
+        cand_mods = {m.upper().strip() for m in candidate.modulation_types}
+        if cand_mods & expected:
+            return self._band_boost, False
+        return self._band_penalty, True

@@ -23,7 +23,7 @@ from src.detection.noise import NoiseEstimator
 from src.detectionlog.database import DetectionLog
 from src.fingerprint.extractor import FingerprintExtractor
 from src.fingerprint.models import SignalFingerprint
-from src.sdr.interface import SDRInterface
+from src.sdr.base import SdrSource
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ class SpectrumScanner:
     and signal detection across a configurable frequency range.
 
     Args:
-        sdr: Connected SDRInterface instance.
+        sdr: Connected SdrSource (live SDRInterface, recorder, or replay).
         scan_config: The 'scan' section from default.yaml.
         sdr_config: The 'sdr' section from default.yaml (for sample_rate).
         detection_config: The 'detection' section from default.yaml.
@@ -60,7 +60,7 @@ class SpectrumScanner:
 
     def __init__(
         self,
-        sdr: SDRInterface,
+        sdr: SdrSource,
         scan_config: dict[str, Any],
         sdr_config: dict[str, Any],
         detection_config: dict[str, Any],
@@ -71,6 +71,7 @@ class SpectrumScanner:
         fingerprint_extractor: FingerprintExtractor | None = None,
         signal_classifier: SignalClassifier | None = None,
         threat_mapper: ThreatMapper | None = None,
+        capture_config: dict[str, Any] | None = None,
     ) -> None:
         self._sdr = sdr
 
@@ -96,6 +97,12 @@ class SpectrumScanner:
         self._fingerprint_extractor = fingerprint_extractor
         self._classifier = signal_classifier
         self._threat_mapper = threat_mapper
+
+        # Capture-quality settings (all default to no-op behaviour)
+        cap = capture_config or {}
+        self._retune_settle = float(cap.get("retune_settle_time", _RETUNE_SETTLE_TIME))
+        self._dc_removal = bool(cap.get("dc_removal", False))
+        self._dc_blank_bins = int(cap.get("dc_blank_bins", 1))
 
         # Pre-compute the Hann window
         self._window = np.hanning(self._fft_size).astype(np.float32)
@@ -156,6 +163,9 @@ class SpectrumScanner:
         power_sum = np.zeros(fft_size, dtype=np.float64)
         for i in range(num_segments):
             segment = iq_data[i * fft_size:(i + 1) * fft_size]
+            # Remove the DC offset that produces a spike at the band centre.
+            if self._dc_removal:
+                segment = segment - segment.mean()
             windowed = segment * self._window
             spectrum = np.fft.fft(windowed)
             power_sum += np.abs(spectrum) ** 2
@@ -173,6 +183,14 @@ class SpectrumScanner:
             np.fft.fftfreq(fft_size, d=1.0 / self._sample_rate)
         )
 
+        # Blank the residual DC/LO-leakage spike at the band centre so it does
+        # not register as a false detection at every step's centre frequency.
+        if self._dc_removal and self._dc_blank_bins >= 0:
+            centre = fft_size // 2
+            lo = max(0, centre - self._dc_blank_bins)
+            hi = min(fft_size, centre + self._dc_blank_bins + 1)
+            psd_dbm[lo:hi] = float(np.median(psd_dbm))
+
         return freq_offsets.astype(np.float64), psd_dbm.astype(np.float64)
 
     def scan_step(self, freq_hz: float) -> ScanStep:
@@ -188,7 +206,7 @@ class SpectrumScanner:
 
         # Tune and let AGC settle
         actual_freq = self._sdr.tune(freq_hz)
-        time.sleep(_RETUNE_SETTLE_TIME)
+        time.sleep(self._retune_settle)
 
         # Capture IQ samples for the dwell period
         num_samples = int(self._dwell_time * self._sample_rate)
@@ -297,7 +315,7 @@ class SpectrumScanner:
                         else:
                             threat_level = self._threat_mapper.default_level
 
-                    self._detection_log.log_signal(
+                    row_id = self._detection_log.log_signal(
                         signal,
                         modulation=fp.modulation.value if fp else None,
                         signal_type=matches[0].signal.name if matches else None,
@@ -310,6 +328,16 @@ class SpectrumScanner:
                         threat_level=threat_level,
                         acf_value=fp.acf_ms if fp else None,
                     )
+                    # Persist the feature vector so an operator correction on this
+                    # detection becomes a training row (active-learning loop).
+                    if fp is not None and row_id is not None:
+                        try:
+                            from src.ml.features import features_to_vector
+                            self._detection_log.store_features(
+                                row_id, list(features_to_vector(fp.features, fp.bandwidth_hz))
+                            )
+                        except Exception:  # noqa: BLE001 — logging features is best-effort
+                            pass
 
             all_signals.extend(signals)
 

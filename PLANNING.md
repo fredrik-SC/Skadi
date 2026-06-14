@@ -136,6 +136,43 @@
 
 ---
 
+### Phase 5: v2.0 — Measurement-driven classifier (Phases A–E)
+
+After the v1.0 bench test, the modulation classifier was found to misclassify every
+real over-the-air capture despite scoring well on synthetic signals. v2.0 is a
+measurement-driven rebuild: each step is validated against a corpus of real captures
+via a scored benchmark, not synthetic data. (Lettered to distinguish from the
+session-numbered v1.0 phases.)
+
+- **A — Record/replay.** SigMF IQ recording (`src/sdr/recorder.py`) and a file-backed
+  `ReplaySource` (`src/sdr/replay.py`) that replays a recorded sweep through the
+  identical detect→fingerprint→classify pipeline. Foundation for an offline,
+  deterministic test corpus. *Acceptance:* a recorded sweep replays to identical
+  detections; capture protocol documented (docs/CAPTURE_PROTOCOL.md).
+- **B — Benchmark.** Scored A/B harness (`benchmark/`) over the corpus: station
+  recall, fragmentation factor, spurious rate, modulation confusion matrix.
+  *Acceptance:* baseline scores recorded; changes are A/B-comparable.
+- **C — Bandwidth + band-plan.** ITU-R SM.443 99%-power occupied bandwidth
+  (`src/dsp/bandwidth.py`) and a band-plan classification prior (inform, not veto;
+  flags `unexpected_for_band`). *Acceptance:* occupied bandwidth tracks known signal
+  widths; band-plan prior improves matching without vetoing valid detections.
+- **D — Feature-led classifier.** Deterministic modulation decision on engineered
+  features (envelope CV/bimodality, robust frequency-state fit, order-1/2 phase
+  concentration, advisory symbol rate). *Acceptance:* synthetic 6/6; real FM corpus
+  tracked; digital modes no longer gated out by spectral flatness.
+- **E — ML + hybrid + feedback loop.** Optional RandomForest on the same features
+  (`src/ml/`, opt-in via `fingerprint.ml.enabled`, deterministic fallback); a hybrid
+  analog-AM gate (`_looks_like_analog_am`); and an operator-feedback loop (GUI
+  correction → stored feature vector → next retrain). *Acceptance:* hybrid beats both
+  baselines on the real corpus (64/94 vs 35/94 deterministic, 49/94 pure-ML); default
+  no-model path unchanged; full suite green (252 tests).
+
+**Tooling added in v2.0:** scikit-learn + joblib (ML), SigMF recordings, the
+benchmark harness. The trained model (`data/modulation_model.joblib`) and the live
+capture corpus (`sessions/`) are built locally and gitignored.
+
+---
+
 ## 2. Technology Stack
 
 | Component | Technology | Rationale |
@@ -265,6 +302,11 @@ Before Session 1, the following must be in place:
 | 6 Apr 2026 | Browser-based GUI over desktop GUI | Aligns with eventual SEIARA integration (React frontend). Platform independent. |
 | 6 Apr 2026 | SQLite for detection log | Lightweight, queryable, no server dependency. JSON export for flexibility. Natural fit for SEIARA polling. |
 | 6 Apr 2026 | Simple threat lookup table over complex risk model | SEIARA already has a correlation engine and risk allocation model. Skaði only needs basic categorisation. |
+| Jun 2026 | Lift the no-ML-for-v1.0 constraint (v2.0) | Hand-tuned thresholds scored well on synthetic signals but misclassified every real OTA capture. Real, lossless, ground-truth captures + a mature feature pipeline make a trained model the right fix. |
+| Jun 2026 | RandomForest on engineered features (not raw IQ / deep learning) | Features span wildly different scales; RandomForest needs no normalisation, trains/predicts fast on small data, runs offline on a Pi, and gives feature importances + a confidence. Reuses the exact production feature pipeline. |
+| Jun 2026 | ML opt-in with deterministic fallback | The system must run offline with no model present and stay green by default. The deterministic classifier is the safe baseline. |
+| Jun 2026 | Hybrid analog-AM gate over pure ML | Measurement: pure-ML regressed AM voice (1/16) while winning digital; deterministic was the reverse. Routing AM to the deterministic path and digital/FM to the model beats both (64/94). |
+| Jun 2026 | Measurement-driven (record/replay + benchmark) over assumption-driven tuning | Synthetic success hid real-world failure. An offline corpus of real captures + a scored benchmark makes every classifier change A/B-verifiable. |
 
 ---
 
@@ -273,3 +315,4 @@ Before Session 1, the following must be in place:
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 6 April 2026 | Fredrik | Initial draft |
+| 2.0 | 14 June 2026 | Fredrik / Claude | Added Phase 5 (v2.0 measurement-driven classifier, Phases A–E), v2.0 decision-log entries (lift no-ML, RandomForest, opt-in fallback, hybrid AM gate, measurement-driven approach). |

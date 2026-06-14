@@ -115,6 +115,35 @@ class TestSDRInterface:
         assert not sdr.connected
 
     @patch("src.sdr.interface.SoapySDR")
+    def test_fast_shutdown_skips_unmake(self, mock_soapy, sdr_config, mock_device):
+        """Fast shutdown retains the device and never calls the crash-prone unmake."""
+        from src.sdr import interface as iface
+        mock_soapy.Device.return_value = mock_device
+
+        sdr = SDRInterface(sdr_config, {"fast_shutdown": True})
+        sdr.connect()
+        retained_before = len(iface._RETAINED_DEVICES)
+        sdr.disconnect()
+
+        # ReleaseDevice/unmake must NOT be called (it aborts the process live).
+        mock_soapy.Device.unmake.assert_not_called()
+        assert not sdr.connected
+        # The device is retained so its destructor never runs.
+        assert len(iface._RETAINED_DEVICES) == retained_before + 1
+
+    @patch("src.sdr.interface.SoapySDR")
+    def test_default_shutdown_calls_unmake(self, mock_soapy, sdr_config, mock_device):
+        """Without fast shutdown, disconnect releases the device as before."""
+        mock_soapy.Device.return_value = mock_device
+
+        sdr = SDRInterface(sdr_config)  # fast_shutdown defaults off
+        sdr.connect()
+        sdr.disconnect()
+
+        mock_soapy.Device.unmake.assert_called_once()
+        assert not sdr.connected
+
+    @patch("src.sdr.interface.SoapySDR")
     def test_context_manager(self, mock_soapy, sdr_config, mock_device):
         """Context manager connects on entry and disconnects on exit."""
         mock_soapy.Device.return_value = mock_device
@@ -165,6 +194,27 @@ class TestSDRInterface:
         assert samples.dtype == np.complex64
         # readStream called twice (2 x 512 = 1024)
         assert mock_device.readStream.call_count == 2
+        sdr.disconnect()
+
+    @patch("src.sdr.interface.SoapySDR")
+    def test_capture_flush_discards_then_captures(self, mock_soapy, sdr_config, mock_device):
+        """flush_samples reads and discards before the real capture."""
+        mock_soapy.Device.return_value = mock_device
+        mock_soapy.SOAPY_SDR_RX = 0
+        mock_soapy.SOAPY_SDR_CF32 = "CF32"
+
+        result = MagicMock()
+        result.ret = 512
+        mock_device.readStream.return_value = result
+
+        # Flush 1024 samples (2 reads) then capture 1024 (2 reads) = 4 reads.
+        sdr = SDRInterface(sdr_config, {"flush_samples": 1024})
+        sdr.connect()
+        sdr.tune(100e6)
+        samples = sdr.capture(1024)
+
+        assert len(samples) == 1024
+        assert mock_device.readStream.call_count == 4
         sdr.disconnect()
 
     @patch("src.sdr.interface.SoapySDR")

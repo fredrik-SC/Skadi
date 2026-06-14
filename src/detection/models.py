@@ -43,6 +43,11 @@ class DetectedSignal:
         snr_db: Peak power minus noise floor in dB.
         timestamp: Unix timestamp of detection.
         scan_step_freq_hz: Centre frequency of the scan step that found this.
+        occupied_bandwidth_hz: ITU-R SM.443 99%-power occupied bandwidth in Hz,
+            or None if not computed. Used downstream for isolation, modulation,
+            and the reported fingerprint bandwidth; consumers fall back to
+            ``bandwidth_hz`` when this is None. ``bandwidth_hz`` itself remains
+            the threshold-region width used for detection clustering.
     """
 
     centre_freq_hz: float
@@ -52,6 +57,7 @@ class DetectedSignal:
     snr_db: float
     timestamp: float
     scan_step_freq_hz: float
+    occupied_bandwidth_hz: float | None = None
 
 
 @dataclass
