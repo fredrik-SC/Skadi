@@ -51,6 +51,7 @@ hybrid is the current architecture — see the [[hybrid-classifier]] note and
 - **docs/OPERATIONS.md** -- How to install and run Skaði
 - **docs/SEIARA_INTEGRATION.md** -- Detection log schema, polling pattern, REST API
 - **docs/CONFIGURATION.md** -- All tuneable parameters
+- **discussion/** -- Exploratory design notes / proposals not yet committed scope (e.g. the dual-tuner direction-finding subsystem). Matured decisions fold back into PRD/PLANNING.
 
 Always consult these documents before starting work. Requirements are the source of truth.
 
